@@ -28,6 +28,7 @@ import { TitlebarRightMount } from "@/shell/titlebar/right-slot"
 import { MobileDrawer, MobileDrawerContent, MobileDrawerLabel, MobileDrawerTrigger } from "@/shell/mobile-drawer"
 import { sessionTabTitle } from "./tab-title"
 import { SessionTabAvatar } from "@/shell/layout/session-tab-avatar"
+import { TitlebarRecentSessionsPopover } from "./titlebar-recent-sessions-popover"
 import { SessionProgressIndicatorV2 } from "@opencode-ai/session-ui/v2/session-progress-indicator-v2"
 import { projectForSession } from "@/shell/layout/helpers"
 import { useSettingsDialog } from "@/settings/command"
@@ -319,6 +320,12 @@ export function Titlebar(props: {
               }
             }
             const toggleHome = () => tabs.toggleHome({ home: layout.route().type === "home", current: currentTab() })
+            const recentSessionsServer = () => {
+              const route = layout.route()
+              const key =
+                route.type === "session" ? route.server : (currentTab()?.server ?? layout.home.selection().server)
+              return global.servers.list().find((item) => ServerConnection.key(item) === key)
+            }
             const homeButton = (vertical = false) => (
               <Show
                 when={vertical}
@@ -607,25 +614,17 @@ export function Titlebar(props: {
                           }}
                           onReorder={(keys) => tabsStoreActions.reorder(keys)}
                         />
-                        <Tooltip
-                          placement="bottom"
-                          value={
+                        <TitlebarRecentSessionsPopover
+                          server={recentSessionsServer()}
+                          label={language.t("command.session.new")}
+                          tooltip={
                             <>
                               {language.t("command.session.new")}
                               <Keybind keys={newTabTooltipKeybind(command)} variant="neutral" />
                             </>
                           }
-                        >
-                          <IconButton
-                            type="button"
-                            variant="ghost-muted"
-                            size="large"
-                            class="shrink-0"
-                            icon={<Icon name="plus" />}
-                            onClick={openNewTab}
-                            aria-label={language.t("command.session.new")}
-                          />
-                        </Tooltip>
+                          onCreate={openNewTab}
+                        />
                       </>
                     }
                   >
