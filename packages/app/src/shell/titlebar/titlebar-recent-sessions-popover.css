@@ -39,7 +39,9 @@
   text-align: start;
 }
 
-[data-component="titlebar-recent-session-row"]:is(:hover, [aria-selected="true"], :focus-visible) {
+[data-component="titlebar-recent-sessions-popover"]:not([data-keyboard-navigation])
+  [data-component="titlebar-recent-session-row"]:hover,
+[data-component="titlebar-recent-session-row"]:is([aria-selected="true"], :focus-visible) {
   background: var(--v2-overlay-simple-overlay-hover);
 }
 

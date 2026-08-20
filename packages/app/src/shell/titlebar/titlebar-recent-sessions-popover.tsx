@@ -10,7 +10,7 @@ import type { SessionInfo } from "@opencode-ai/client/promise"
 import { useGlobal } from "@/runtime/server/runtime"
 import { useLanguage } from "@/runtime/i18n/language"
 import { ServerConnection } from "@/runtime/server/registry"
-import { useTabs } from "@/shell/tabs/tabs"
+import { sessionHasOpenTab, useTabs } from "@/shell/tabs/tabs"
 import {
   HOME_SESSION_LIMIT,
   loadHomeSessionIndex,
@@ -48,6 +48,7 @@ export function TitlebarRecentSessionsPopover(props: {
     highlighted: "",
     placement: "bottom-start" as "bottom-start" | "bottom-end",
     restoreFocus: true,
+    keyboardNavigation: false,
   })
   let anchor: HTMLDivElement | undefined
   let button: HTMLButtonElement | undefined
@@ -71,8 +72,10 @@ export function TitlebarRecentSessionsPopover(props: {
     }
   })
   const records = createMemo(() => {
+    const server = props.server
     const serverCtx = ctx()
-    if (!serverCtx) return []
+    if (!server || !serverCtx) return []
+    const key = ServerConnection.key(server)
     return buildHomeSessionRecords({
       sessions: () =>
         retainHomeSessions(
@@ -87,7 +90,7 @@ export function TitlebarRecentSessionsPopover(props: {
         ),
       projectDirectories: () => undefined,
       projects: serverCtx.projects.list,
-    })
+    }).filter((record) => !sessionHasOpenTab(tabs.store, key, record.session))
   })
   const visible = createMemo(() => filterHomeSessionRecords(records(), state.query).slice(0, RESULT_LIMIT))
   const active = createMemo(() => {
@@ -98,10 +101,10 @@ export function TitlebarRecentSessionsPopover(props: {
 
   const setOpen = (open: boolean) => {
     if (open) {
-      setState({ open: true, restoreFocus: true })
+      setState({ open: true, restoreFocus: true, keyboardNavigation: false })
       return
     }
-    setState({ open: false, query: "", highlighted: "" })
+    setState({ open: false, query: "", highlighted: "", keyboardNavigation: false })
   }
 
   const open = (event: MouseEvent) => {
@@ -143,13 +146,13 @@ export function TitlebarRecentSessionsPopover(props: {
     if (list.length === 0) return
     const index = list.findIndex((record) => homeSessionSearchKey(record) === active())
     const next = ((index === -1 ? 0 : index) + delta + list.length) % list.length
-    setState("highlighted", homeSessionSearchKey(list[next]))
+    setState({ highlighted: homeSessionSearchKey(list[next]), keyboardNavigation: true })
   }
 
   return (
     <Kobalte open={state.open} onOpenChange={setOpen} placement={state.placement} gutter={6} modal={false}>
       <Kobalte.Anchor ref={anchor} as="div" class="shrink-0 [app-region:no-drag]" onContextMenu={open}>
-        <Tooltip inactive={state.open} placement="bottom" value={props.tooltip}>
+        <Tooltip forceOpen={state.open ? false : undefined} placement="bottom" value={props.tooltip}>
           <IconButton
             ref={button}
             type="button"
@@ -179,6 +182,7 @@ export function TitlebarRecentSessionsPopover(props: {
             element.dir = getComputedStyle(anchor ?? document.documentElement).direction
           }}
           data-component="titlebar-recent-sessions-popover"
+          data-keyboard-navigation={state.keyboardNavigation || undefined}
           aria-label={language.t("sidebar.project.recentSessions")}
           onOpenAutoFocus={(event) => {
             event.preventDefault()
@@ -205,7 +209,9 @@ export function TitlebarRecentSessionsPopover(props: {
               aria-expanded={state.open}
               aria-autocomplete="list"
               aria-activedescendant={active() ? `${listID}-${active()}` : undefined}
-              onInput={(event) => setState({ query: event.currentTarget.value, highlighted: "" })}
+              onInput={(event) =>
+                setState({ query: event.currentTarget.value, highlighted: "", keyboardNavigation: true })
+              }
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   event.preventDefault()
@@ -261,7 +267,7 @@ export function TitlebarRecentSessionsPopover(props: {
                       aria-selected={active() === key()}
                       aria-label={title()}
                       data-component="titlebar-recent-session-row"
-                      onMouseEnter={() => setState("highlighted", key())}
+                      onPointerMove={() => setState({ highlighted: key(), keyboardNavigation: false })}
                       onClick={() => select(record)}
                     >
                       <SessionTabAvatarView

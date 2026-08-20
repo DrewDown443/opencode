@@ -42,12 +42,19 @@ test("opens and searches recent sessions from the new-session button", async ({ 
   await page.goto("/")
   const newSession = page.locator('[data-action="titlebar-new-session"]')
   await expect(newSession).toBeVisible()
+  const triggerRect = () =>
+    newSession.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+    })
+  const rectBeforeOpen = await triggerRect()
   await newSession.click({ button: "right" })
 
   const popover = page.getByRole("dialog", { name: "Recent sessions" })
   const search = popover.getByRole("combobox", { name: "Search sessions" })
   const options = popover.getByRole("option")
   await expect(popover).toBeVisible()
+  await expect.poll(triggerRect).toEqual(rectBeforeOpen)
   await expect(newSession).toHaveAttribute("data-state", "pressed")
   await expect(popover).toHaveCSS("width", "240px")
   await expect(search).toBeFocused()
@@ -68,6 +75,22 @@ test("opens and searches recent sessions from the new-session button", async ({ 
   await newSession.click({ button: "right" })
   await expect(search).toBeFocused()
 
+  const hovered = popover.getByRole("option", { name: "Recent session 4" })
+  const keyboardSelected = popover.getByRole("option", { name: "Recent session 3" })
+  await hovered.hover()
+  await expect(hovered).toHaveAttribute("aria-selected", "true")
+  await search.press("ArrowDown")
+  await expect(keyboardSelected).toHaveAttribute("aria-selected", "true")
+  await expect
+    .poll(async () => {
+      const [hoveredBackground, selectedBackground] = await Promise.all([
+        hovered.evaluate((element) => getComputedStyle(element).backgroundColor),
+        keyboardSelected.evaluate((element) => getComputedStyle(element).backgroundColor),
+      ])
+      return hoveredBackground !== selectedBackground
+    })
+    .toBe(true)
+
   await search.fill("hidden search")
   await expect(options).toHaveCount(1)
   await expect(popover.getByRole("option", { name: "Hidden search target" })).toHaveAttribute("aria-selected", "true")
@@ -79,6 +102,11 @@ test("opens and searches recent sessions from the new-session button", async ({ 
   await search.press("Enter")
   await expect(page).toHaveURL(/\/session\/ses_6$/)
   await expect(popover).toBeHidden()
+
+  await newSession.click({ button: "right" })
+  await expect(popover).toBeVisible()
+  await expect(popover.getByRole("option", { name: "Recent session 6" })).toHaveCount(0)
+  await search.press("Escape")
 
   await newSession.click()
   await expect(page).toHaveURL(/\/new-session\?draftId=/)
