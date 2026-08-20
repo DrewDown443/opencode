@@ -49,6 +49,7 @@ export function TitlebarRecentSessionsPopover(props: {
     placement: "bottom-start" as "bottom-start" | "bottom-end",
     restoreFocus: true,
     keyboardNavigation: false,
+    suppressTriggerHover: false,
   })
   let anchor: HTMLDivElement | undefined
   let button: HTMLButtonElement | undefined
@@ -101,7 +102,7 @@ export function TitlebarRecentSessionsPopover(props: {
 
   const setOpen = (open: boolean) => {
     if (open) {
-      setState({ open: true, restoreFocus: true, keyboardNavigation: false })
+      setState({ open: true, restoreFocus: true, keyboardNavigation: false, suppressTriggerHover: false })
       return
     }
     setState({ open: false, query: "", highlighted: "", keyboardNavigation: false })
@@ -157,12 +158,14 @@ export function TitlebarRecentSessionsPopover(props: {
             ref={button}
             type="button"
             data-action="titlebar-new-session"
+            data-suppress-hover={state.suppressTriggerHover || undefined}
             variant="ghost-muted"
             size="large"
             state={state.open ? "pressed" : undefined}
             class="shrink-0"
             icon={<Icon name="plus" />}
             onClick={props.onCreate}
+            onPointerLeave={() => setState("suppressTriggerHover", false)}
             aria-label={props.label}
             aria-haspopup="dialog"
             aria-expanded={state.open}
@@ -191,6 +194,7 @@ export function TitlebarRecentSessionsPopover(props: {
           onInteractOutside={() => setState("restoreFocus", false)}
           onCloseAutoFocus={(event) => {
             event.preventDefault()
+            if (state.restoreFocus && button?.matches(":hover")) setState("suppressTriggerHover", true)
             if (state.restoreFocus) button?.focus({ preventScroll: true })
             setState("restoreFocus", true)
           }}

@@ -71,7 +71,11 @@ test("opens and searches recent sessions from the new-session button", async ({ 
   await search.press("Escape")
   await expect(popover).toBeHidden()
   await expect(newSession).not.toHaveAttribute("data-state")
+  await expect(newSession).toHaveAttribute("data-suppress-hover")
+  await expect(newSession).toHaveCSS("background-color", "rgba(0, 0, 0, 0)")
   await expect(newSession).toBeFocused()
+  await page.mouse.move(0, 100)
+  await expect(newSession).not.toHaveAttribute("data-suppress-hover")
   await newSession.click({ button: "right" })
   await expect(search).toBeFocused()
 

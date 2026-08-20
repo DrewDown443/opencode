@@ -45,6 +45,13 @@
   background: var(--v2-overlay-simple-overlay-hover);
 }
 
+[data-component="icon-button-v2"][data-variant="ghost-muted"][data-action="titlebar-new-session"][data-suppress-hover]:hover:not(
+    :disabled
+  ) {
+  background-color: transparent;
+  color: var(--v2-icon-icon-muted);
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-component="titlebar-recent-sessions-popover"] {
     animation: none;
