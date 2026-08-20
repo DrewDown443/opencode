@@ -2,6 +2,7 @@ import type { SessionInfo } from "@opencode-ai/client/promise"
 import type { LocalProject } from "@/shell/state/layout"
 import { compareSessionTime, displayName } from "@/shell/layout/helpers"
 import { pathKey } from "@/workspaces/path-key"
+import { sessionLabel } from "@/session/title"
 
 export type HomeSessionRecord = {
   session: SessionInfo
@@ -29,6 +30,18 @@ export function buildHomeSessionRecords(input: {
       }
       return { session, project, projectName: displayName(project) }
     })
+}
+
+export function filterHomeSessionRecords(records: HomeSessionRecord[], query: string) {
+  const value = query.trim().toLowerCase()
+  if (!value) return records
+  return records.filter((record) =>
+    `${sessionLabel(record.session)} ${record.projectName}`.toLowerCase().includes(value),
+  )
+}
+
+export function homeSessionSearchKey(record: HomeSessionRecord) {
+  return `${pathKey(record.session.location.directory)}:${record.session.id}`
 }
 
 // Worktree inventories load on demand, so a worktree session may not match any directory yet;

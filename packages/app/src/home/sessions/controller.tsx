@@ -20,7 +20,6 @@ import { sessionHasOpenTab, useTabs } from "@/shell/tabs/tabs"
 import { errorMessage } from "@/shell/layout/helpers"
 import { useSessionTabAvatarState } from "@/shell/layout/project-avatar-state"
 import { removedSessionIDs } from "@/session/session-domain"
-import { pathKey } from "@/workspaces/path-key"
 import { fetchSessionExport, saveSessionExport, sessionExportFilename } from "@/session/commands/export"
 import { usePlatform } from "@/runtime/platform/platform"
 import { sessionLabel, sessionTitle } from "@/session/title"
@@ -319,10 +318,6 @@ export function createHomeSessionsController(home: HomeController) {
 
 function directories(project: LocalProject) {
   return [project.worktree, ...(project.sandboxes ?? [])]
-}
-
-export function homeSessionSearchKey(record: HomeSessionRecord) {
-  return `${pathKey(record.session.location.directory)}:${record.session.id}`
 }
 
 function groupSessions(records: HomeSessionRecord[], language: ReturnType<typeof useLanguage>): HomeSessionGroup[] {

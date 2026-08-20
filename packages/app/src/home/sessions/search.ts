@@ -2,12 +2,12 @@ import { useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
 import { serverName } from "@/runtime/server/registry"
 import { displayName } from "@/shell/layout/helpers"
-import { sessionLabel } from "@/session/title"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { HomeController } from "../model"
-import { homeSessionSearchKey, type HomeSessionRecord, type HomeSessionsController } from "./controller"
+import type { HomeSessionsController } from "./controller"
+import { filterHomeSessionRecords, homeSessionSearchKey, type HomeSessionRecord } from "./records"
 import { looksLikeSessionID } from "@/session/search"
 
 type HomeSessionSearchSource = Pick<HomeSessionsController, "data" | "session">
@@ -28,11 +28,8 @@ export function createHomeSessionSearchController(home: HomeController, sessions
   let list: HTMLDivElement | undefined
   const query = createMemo(() => state.value.trim())
   const results = createMemo(() => {
-    const value = query().toLowerCase()
-    if (!value) return []
-    const records = sessions.data
-      .searchRecords()
-      .filter((record) => `${sessionLabel(record.session)} ${record.projectName}`.toLowerCase().includes(value))
+    if (!query()) return []
+    const records = filterHomeSessionRecords(sessions.data.searchRecords(), query())
     if (!state.exact || records.some((record) => record.session.id === state.exact?.session.id)) return records
     return [state.exact, ...records]
   })

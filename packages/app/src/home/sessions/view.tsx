@@ -16,13 +16,8 @@ import { SessionTabAvatarView } from "@/shell/layout/session-tab-avatar"
 import { sessionLabel } from "@/session/title"
 import { shouldOpenSessionInBackground } from "./open"
 import "./view.css"
-import {
-  HomeSessionStatusController,
-  homeSessionSearchKey,
-  type HomeSessionGroup,
-  type HomeSessionRecord,
-  type OpenSessionOptions,
-} from "./controller"
+import { HomeSessionStatusController, type HomeSessionGroup, type OpenSessionOptions } from "./controller"
+import { homeSessionSearchKey, type HomeSessionRecord } from "./records"
 
 const SHOW_HOME_SESSION_ARCHIVE = false
 const HOME_SECTION_LABEL = "text-v2-text-text-muted [font-weight:440]"

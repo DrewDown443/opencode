@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionInfo } from "@opencode-ai/client/promise"
 import type { LocalProject } from "@/shell/state/layout"
-import { buildHomeSessionRecords } from "./records"
+import { buildHomeSessionRecords, filterHomeSessionRecords } from "./records"
 
 const session = (id: string, directory: string, projectID: string) =>
   ({
@@ -57,5 +57,22 @@ describe("buildHomeSessionRecords", () => {
     })
 
     expect(records[0]?.project.worktree).toBe("/repo/a/packages/app")
+  })
+})
+
+describe("filterHomeSessionRecords", () => {
+  test("matches session titles and project names case-insensitively", () => {
+    const projects = [
+      { id: "project-a", worktree: "/repo/a", name: "Alpha", expanded: true },
+      { id: "project-b", worktree: "/repo/b", name: "Beta", expanded: true },
+    ] as LocalProject[]
+    const records = buildHomeSessionRecords({
+      sessions: () => [session("Title", "/repo/a", "project-a"), session("Other", "/repo/b", "project-b")],
+      projectDirectories: () => undefined,
+      projects: () => projects,
+    })
+
+    expect(filterHomeSessionRecords(records, "TITLE").map((record) => record.session.id)).toEqual(["Title"])
+    expect(filterHomeSessionRecords(records, "alpha").map((record) => record.session.id)).toEqual(["Title"])
   })
 })
