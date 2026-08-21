@@ -441,9 +441,11 @@ export function Titlebar(props: {
               mobile()
               setMobileTabs("open", false)
             })
+            let openRecentSessions: ((event: MouseEvent) => void) | undefined
 
             return (
               <div
+                data-slot="titlebar-tab-nav"
                 class="h-full flex-1 overflow-hidden flex flex-row items-center gap-1.5 px-2 md:pe-3"
                 classList={{
                   "pt-[max(0px,calc(8px-env(safe-area-inset-top,0px)))]": !bottom() && !windows(),
@@ -451,6 +453,10 @@ export function Titlebar(props: {
                   "pl-4": macTrafficLights(),
                   // Center the 20px app icon over the sidebar's 16px icon column.
                   "ps-3.5": windows(),
+                }}
+                onContextMenu={(event) => {
+                  if (titlebarTabNavContextMenuBlocked(event.target)) return
+                  openRecentSessions?.(event)
                 }}
               >
                 <Show when={!mobile() && (!props.verticalTabs || windows())}>
@@ -624,6 +630,7 @@ export function Titlebar(props: {
                             </>
                           }
                           onCreate={openNewTab}
+                          registerContextMenu={(handler) => (openRecentSessions = handler)}
                         />
                       </>
                     }
@@ -689,7 +696,7 @@ export function Titlebar(props: {
                   </Show>
                 </Show>
                 <Show when={!mobile()}>
-                  <div class="flex-1" />
+                  <div data-slot="titlebar-tab-nav-blank" class="flex-1 self-stretch" />
                 </Show>
                 <TitlebarRight state={rightState()} mount={!props.verticalTabs} />
               </div>
@@ -698,6 +705,13 @@ export function Titlebar(props: {
         </Match>
       </Switch>
     </header>
+  )
+}
+
+function titlebarTabNavContextMenuBlocked(target: EventTarget | null) {
+  if (!(target instanceof Element)) return true
+  return !!target.closest(
+    '[data-titlebar-tab], [data-action], button, a, input, select, textarea, [role="button"], [role="menuitem"], [role="option"], [contenteditable="true"]',
   )
 }
 

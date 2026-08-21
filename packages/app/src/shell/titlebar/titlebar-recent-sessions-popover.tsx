@@ -36,6 +36,7 @@ export function TitlebarRecentSessionsPopover(props: {
   label: string
   tooltip: JSX.Element
   onCreate: () => void
+  registerContextMenu: (handler: (event: MouseEvent) => void) => void
 }) {
   const global = useGlobal()
   const tabs = useTabs()
@@ -149,6 +150,8 @@ export function TitlebarRecentSessionsPopover(props: {
     const next = ((index === -1 ? 0 : index) + delta + list.length) % list.length
     setState({ highlighted: homeSessionSearchKey(list[next]), keyboardNavigation: true })
   }
+
+  props.registerContextMenu(open)
 
   return (
     <Kobalte open={state.open} onOpenChange={setOpen} placement={state.placement} gutter={6} modal={false}>

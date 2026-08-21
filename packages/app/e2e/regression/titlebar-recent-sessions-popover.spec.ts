@@ -40,6 +40,8 @@ test("opens and searches recent sessions from the new-session button", async ({ 
   }, directory)
 
   await page.goto("/")
+  const tabNav = page.locator('[data-slot="titlebar-tab-nav"]')
+  const blankTabNav = page.locator('[data-slot="titlebar-tab-nav-blank"]')
   const newSession = page.locator('[data-action="titlebar-new-session"]')
   await expect(newSession).toBeVisible()
   const triggerRect = () =>
@@ -76,6 +78,15 @@ test("opens and searches recent sessions from the new-session button", async ({ 
   await expect(newSession).toBeFocused()
   await page.mouse.move(0, 100)
   await expect(newSession).not.toHaveAttribute("data-suppress-hover")
+
+  await tabNav.getByRole("button", { name: "Home" }).click({ button: "right" })
+  await expect(popover).toBeHidden()
+  await blankTabNav.click({ button: "right" })
+  await expect(popover).toBeVisible()
+  await expect(newSession).toHaveAttribute("data-state", "pressed")
+  await expect(search).toBeFocused()
+  await search.press("Escape")
+
   await newSession.click({ button: "right" })
   await expect(search).toBeFocused()
 
@@ -107,7 +118,10 @@ test("opens and searches recent sessions from the new-session button", async ({ 
   await expect(page).toHaveURL(/\/session\/ses_6$/)
   await expect(popover).toBeHidden()
 
-  await newSession.click({ button: "right" })
+  await page.locator("[data-titlebar-tab]").filter({ hasText: "Recent session 6" }).click({ button: "right" })
+  await expect(popover).toBeHidden()
+  await page.keyboard.press("Escape")
+  await blankTabNav.click({ button: "right" })
   await expect(popover).toBeVisible()
   await expect(popover.getByRole("option", { name: "Recent session 6" })).toHaveCount(0)
   await search.press("Escape")
