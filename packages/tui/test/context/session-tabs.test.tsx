@@ -933,6 +933,63 @@ test("closing a tab is not undone by another TUI viewing the same session", asyn
   }
 })
 
+test.each(["shell", "child"])("a completed user shell in %s does not leave an idle tab busy", async (sessionID) => {
+  const setup = await renderSessionTabs("shell", { persisted: ["shell"], sessionParents: { child: "shell" } })
+
+  try {
+    await wait(() => setup.data.session.get(sessionID) !== undefined)
+    expect(setup.tabs.status("shell").busy).toBe(false)
+    setup.emit({
+      id: "evt_shell_completion",
+      created: Date.now(),
+      type: "session.inbox.enqueued",
+      durable: { aggregateID: sessionID, seq: 1, version: 1 },
+      data: {
+        sessionID,
+        inboxID: "msg_shell_completion",
+        item: {
+          type: "synthetic",
+          delivery: "steer",
+          payload: {
+            text: "Shell completed with exit code 0: done",
+            metadata: { source: "shell", shellID: "sh_done", state: "completed", exit: 0, truncated: false },
+          },
+        },
+      },
+    })
+    await wait(() => setup.data.session.pending.list(sessionID).length === 1)
+    expect(setup.data.session.status(sessionID)).toBe("idle")
+    expect(setup.tabs.status("shell").busy).toBe(false)
+
+    setup.emit({
+      id: "evt_execution_started",
+      created: Date.now(),
+      type: "session.execution.started",
+      durable: { aggregateID: sessionID, seq: 2, version: 1 },
+      data: { sessionID },
+    })
+    await wait(() => setup.data.session.status(sessionID) === "running")
+    expect(setup.tabs.status("shell").busy).toBe(true)
+
+    setup.emit({
+      id: "evt_execution_succeeded",
+      created: Date.now(),
+      type: "session.execution.succeeded",
+      durable: { aggregateID: sessionID, seq: 3, version: 1 },
+      data: { sessionID },
+    })
+    await wait(() => setup.data.session.status(sessionID) === "idle")
+    expect(setup.data.session.pending.list(sessionID)).toHaveLength(1)
+    expect(setup.tabs.status("shell").busy).toBe(false)
+
+    setup.emit(admitted(sessionID, "msg_4"))
+    await wait(() => setup.data.session.pending.list(sessionID).length === 2)
+    expect(setup.tabs.status("shell").busy).toBe(true)
+  } finally {
+    await setup.destroy()
+  }
+})
+
 test("user prompt admissions pulse an already-busy background tab", async () => {
   const setup = await renderSessionTabs("background", { persisted: ["background"] })
 
@@ -952,8 +1009,9 @@ test("user prompt admissions pulse an already-busy background tab", async () => 
         item: { type: "synthetic", payload: { text: "editor context" }, delivery: "steer" },
       },
     })
-    await Bun.sleep(20)
+    await wait(() => setup.data.session.pending.list("background").length === 1)
     expect(setup.tabs.status("background").promptPulse).toBe(0)
+    expect(setup.tabs.status("background").busy).toBe(false)
 
     setup.emit(admitted("background", "msg_1"))
     await wait(() => setup.tabs.status("background").promptPulse === 1 && setup.tabs.status("background").busy)
