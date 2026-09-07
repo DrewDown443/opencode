@@ -17,6 +17,7 @@ export type ShellChange = {
 export interface Interface {
   readonly installedPackage: string | undefined
   readonly method: () => Effect.Effect<Method | undefined>
+  readonly v1Installed: () => Effect.Effect<boolean>
   readonly uninstall: (method: Exclude<Method, "curl">) => Effect.Effect<void, Error>
   readonly shellChanges: () => Effect.Effect<ReadonlyArray<ShellChange>>
 }
@@ -89,6 +90,26 @@ export const make = Effect.fnUntraced(function* () {
     return results.find((result) => result.result.stdout.includes(installedPackage))?.check.method
   })
 
+  const v1Installed = Effect.fn("cli.installation.v1-installed")(
+    function* () {
+      const curlBinary = path.join(
+        global.home,
+        ".opencode",
+        "bin",
+        process.platform === "win32" ? "opencode.exe" : "opencode",
+      )
+      if (yield* fs.exists(curlBinary)) return true
+      // Package-manager installs resolve through PATH (including Bun, nvm, pnpm, Yarn, and Homebrew).
+      yield* appProcess.run(ChildProcess.make("opencode", ["--version"]), {
+        timeout: "5 seconds",
+        maxOutputBytes: 10_000,
+        maxErrorBytes: 10_000,
+      })
+      return true
+    },
+    Effect.catch(() => Effect.succeed(false)),
+  )
+
   const uninstall = Effect.fn("cli.installation.uninstall")(function* (method: Exclude<Method, "curl">) {
     if (!installedPackage) return yield* Effect.fail(new Error("Could not identify the installed OpenCode package"))
     const result = yield* run(uninstallCommand(method, installedPackage), "5 minutes")
@@ -116,7 +137,7 @@ export const make = Effect.fnUntraced(function* () {
     return changes.filter((change) => change !== undefined)
   })
 
-  return { installedPackage, method, uninstall, shellChanges } satisfies Interface
+  return { installedPackage, method, v1Installed, uninstall, shellChanges } satisfies Interface
 })
 
 export function uninstallCommand(method: Exclude<Method, "curl">, name: string): [string, ...string[]] {

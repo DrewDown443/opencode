@@ -28,13 +28,29 @@ export default Runtime.handler(
       method && method !== "curl" && installation.installedPackage
         ? { method, command: Installation.uninstallCommand(method, installation.installedPackage) }
         : undefined
+    const shell = method === "curl" ? yield* installation.shellChanges() : []
+    const v1Installed = (!input.keepConfig || !input.keepData) && (yield* installation.v1Installed())
+    const interactive = !input.force && !input.dryRun
+    if (interactive)
+      yield* requireInteractive("Pass --force to uninstall without an interactive terminal, or --dry-run to preview.")
+    const removeConfig = yield* confirmRemoval({
+      keep: input.keepConfig,
+      interactive,
+      message: v1Installed
+        ? "Delete global OpenCode config? OpenCode v1 also uses it."
+        : "Delete global OpenCode config?",
+    })
+    const removeData = yield* confirmRemoval({
+      keep: input.keepData,
+      interactive,
+      message: v1Installed ? "Delete all OpenCode data? OpenCode v1 also uses it." : "Delete all OpenCode data?",
+    })
     const directories = [
-      { path: global.data, label: "Data", keep: input.keepData },
+      { path: global.data, label: "Data", keep: !removeData },
       { path: global.cache, label: "Cache", keep: false },
-      { path: global.config, label: "Config", keep: input.keepConfig },
+      { path: global.config, label: "Config", keep: !removeConfig },
       { path: global.state, label: "State", keep: false },
     ]
-    const shell = method === "curl" ? yield* installation.shellChanges() : []
 
     log.message("Uninstall plan:")
     log.info("Stop the local background service")
@@ -57,13 +73,14 @@ export default Runtime.handler(
     shell.forEach((change) => log.info(`Remove installer PATH entry: ${change.path}`))
     if (removal) log.info(`Package: ${removal.command.join(" ")}`)
     if (method === "curl") log.info(`Binary (manual removal): ${process.execPath}`)
+    if (v1Installed && (removeConfig || removeData))
+      log.warn("OpenCode v1 is also installed and uses the files marked for removal.")
     if (input.dryRun) {
       outro("Dry run - no changes made")
       return undefined
     }
     if (!input.force) {
-      yield* requireInteractive("Pass --force to uninstall without an interactive terminal, or --dry-run to preview.")
-      if (!(yield* prompt(() => confirm({ message: "Are you sure you want to uninstall?", initialValue: false })))) {
+      if (!(yield* prompt(() => confirm({ message: "Proceed with uninstalling OpenCode?", initialValue: false })))) {
         outro("Cancelled")
         return undefined
       }
@@ -112,3 +129,9 @@ export default Runtime.handler(
     return undefined
   }, handlePromptErrors),
 )
+
+function confirmRemoval(input: { readonly keep: boolean; readonly interactive: boolean; readonly message: string }) {
+  if (input.keep) return Effect.succeed(false)
+  if (!input.interactive) return Effect.succeed(true)
+  return prompt(() => confirm({ message: input.message, initialValue: true }))
+}
