@@ -13,6 +13,7 @@ import { Image } from "@opencode-ai/core/image"
 import { Location } from "@opencode-ai/core/location"
 import { FileAccess } from "@opencode-ai/core/file-access"
 import { Permission } from "@opencode-ai/core/permission"
+import { AgentPlugin } from "@opencode-ai/core/plugin/agent"
 import { Project } from "@opencode-ai/core/project"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { AbsolutePath } from "@opencode-ai/core/schema"
@@ -34,114 +35,179 @@ import { tmpdir } from "./fixture/tmpdir"
 import { it } from "./lib/effect"
 import { imagePassthrough } from "./lib/image"
 import { executeTool, registerToolPlugin, toolIdentity } from "./lib/tool"
-import { host } from "./plugin/host"
+import { agentHost, host } from "./plugin/host"
 
 const sessionID = Session.ID.make("ses_skill_resources")
 
-const fixture = (symlink: boolean) =>
-  Effect.gen(function* () {
-    const tmp = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir()))
-    const project = path.join(tmp.path, "project")
-    const config = path.join(tmp.path, "home", ".opencode")
-    const source = path.join(config, "skill")
-    const storage = symlink ? path.join(tmp.path, "dotfiles", "skills") : source
-    yield* Effect.promise(() =>
-      Promise.all([
-        fs.mkdir(project, { recursive: true }),
-        fs.mkdir(config, { recursive: true }),
-        fs.mkdir(path.join(storage, "release", "references"), { recursive: true }),
-      ]),
+const fixture = Effect.fn("SkillResourceTest.fixture")(function* (symlink: boolean) {
+  const tmp = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir()))
+  const project = path.join(tmp.path, "project")
+  const config = path.join(tmp.path, "home", ".opencode")
+  const source = path.join(config, "skill")
+  const storage = symlink ? path.join(tmp.path, "dotfiles", "skills") : source
+  yield* Effect.promise(() =>
+    Promise.all([
+      fs.mkdir(project, { recursive: true }),
+      fs.mkdir(config, { recursive: true }),
+      fs.mkdir(path.join(storage, "release", "references"), { recursive: true }),
+    ]),
+  )
+  if (symlink) yield* Effect.promise(() => fs.symlink(storage, source, "dir"))
+  yield* Effect.promise(() =>
+    Promise.all([
+      fs.writeFile(
+        path.join(storage, "release", "SKILL.md"),
+        "---\nname: Release\ndescription: Release guide\n---\nRead references/policy.md",
+      ),
+      fs.writeFile(path.join(storage, "release", "references", "policy.md"), "Release policy fixture\n"),
+    ]),
+  )
+  const layer = AppNodeBuilder.build(
+    LayerNode.group([
+      Database.node,
+      Bus.node,
+      Location.node,
+      Global.node,
+      Tool.node,
+      Skill.node,
+      Agent.node,
+      Permission.node,
+      FSUtil.node,
+      FileAccess.node,
+      ReadToolFileSystem.node,
+      SessionInstructions.node,
+    ]),
+    [
+      Location.node.replace(
+        Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make(project) }))),
+      ),
+      Global.node.replace(
+        Global.layerWith({
+          home: path.join(tmp.path, "home"),
+          config: path.join(tmp.path, "managed-config"),
+          tmp: path.join(tmp.path, "managed-tmp"),
+        }),
+      ),
+      Image.node.replace(imagePassthrough),
+    ],
+  )
+  const context = yield* Layer.build(layer)
+  yield* Effect.gen(function* () {
+    const database = yield* Database.Service
+    const agents = yield* Agent.Service
+    const skills = yield* Skill.Service
+    yield* database.db
+      .insert(ProjectTable)
+      .values({ id: Project.ID.global, worktree: AbsolutePath.make(project), sandboxes: [] })
+      .run()
+      .pipe(Effect.orDie)
+    yield* database.db
+      .insert(SessionTable)
+      .values({
+        id: sessionID,
+        project_id: Project.ID.global,
+        slug: "skill-resources",
+        directory: project,
+        title: "Skill resources",
+        version: "test",
+        agent: "build",
+      })
+      .run()
+      .pipe(Effect.orDie)
+    yield* AgentPlugin.Plugin.effect(host({ agent: agentHost(agents) }))
+    yield* ConfigSkillPlugin.Plugin.effect(
+      host({
+        skill: {
+          list: () => Effect.die("unused skill.list"),
+          transform: skills.transform,
+          reload: skills.reload,
+        },
+      }),
+    ).pipe(
+      Effect.provide(Config.testLayer([new Directory({ type: "directory", path: AbsolutePath.make(config) })])),
+      Effect.provideService(SkillDiscovery.Service, { pull: () => Effect.succeed([]) }),
+      Effect.provide(Watcher.testLayer),
     )
-    if (symlink) yield* Effect.promise(() => fs.symlink(storage, source, "dir"))
-    yield* Effect.promise(() =>
-      Promise.all([
-        fs.writeFile(
-          path.join(storage, "release", "SKILL.md"),
-          "---\nname: Release\ndescription: Release guide\n---\nRead references/policy.md",
-        ),
-        fs.writeFile(path.join(storage, "release", "references", "policy.md"), "Release policy fixture\n"),
-      ]),
-    )
-    const layer = AppNodeBuilder.build(
-      LayerNode.group([
-        Database.node,
-        Bus.node,
-        Location.node,
-        Global.node,
-        Tool.node,
-        Skill.node,
-        Agent.node,
-        Permission.node,
-        FSUtil.node,
-        FileAccess.node,
-        ReadToolFileSystem.node,
-        SessionInstructions.node,
-      ]),
-      [
-        Location.node.replace(
-          Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make(project) }))),
-        ),
-        Global.node.replace(
-          Global.layerWith({
-            home: path.join(tmp.path, "home"),
-            config: path.join(tmp.path, "managed-config"),
-            tmp: path.join(tmp.path, "managed-tmp"),
-          }),
-        ),
-        Image.node.replace(imagePassthrough),
-      ],
-    )
-    return { project, config, source, layer }
-  })
+    yield* registerToolPlugin(SkillTool.Plugin)
+    yield* registerToolPlugin(ReadTool.Plugin)
+  }).pipe(Effect.provide(context))
+  return { source, context }
+})
 
 describe("skill supporting files", () => {
   for (const symlink of [false, true]) {
+    for (const agent of ["build", "explore"]) {
+      it.live(`preserves V1 reference reads before skill invocation (${agent}, symlink=${symlink})`, () =>
+        Effect.gen(function* () {
+          const tmp = yield* fixture(symlink)
+          yield* Effect.gen(function* () {
+            const tools = yield* Tool.Service
+            const bus = yield* Bus.Service
+            const permission = yield* Permission.Service
+            const agents = yield* Agent.Service
+            expect(yield* agents.get(Agent.ID.make(agent))).toMatchObject({
+              id: agent,
+              mode: agent === "explore" ? "subagent" : "primary",
+            })
+            const requests: Permission.Request[] = []
+            yield* bus.subscribe(Permission.Event.Asked).pipe(
+              Stream.runForEach((event) => {
+                requests.push(event.data)
+                return permission.reply({ requestID: event.data.id, reply: "once" })
+              }),
+              Effect.forkScoped({ startImmediately: true }),
+            )
+
+            expect(
+              yield* executeTool(tools, {
+                sessionID,
+                ...toolIdentity,
+                agent: Agent.ID.make(agent),
+                call: {
+                  type: "tool-call",
+                  id: `reference-before-invocation-${agent}`,
+                  name: "read",
+                  input: { path: path.join(tmp.source, "release", "references", "policy.md") },
+                },
+              }),
+            ).toMatchObject({ status: "completed", output: { content: "Release policy fixture\n" } })
+            expect(requests).toEqual([])
+            yield* agents.transform((editor) =>
+              editor.update(Agent.ID.make(agent), (info) => {
+                info.permissions.push({ action: "external_directory", resource: "*", effect: "deny" })
+              }),
+            )
+            expect(
+              yield* executeTool(tools, {
+                sessionID,
+                ...toolIdentity,
+                agent: Agent.ID.make(agent),
+                call: {
+                  type: "tool-call",
+                  id: `reference-denied-${agent}`,
+                  name: "read",
+                  input: { path: path.join(tmp.source, "release", "references", "policy.md") },
+                },
+              }),
+            ).toMatchObject({
+              status: "error",
+              error: { type: "permission.rejected", message: "Permission denied: external_directory" },
+            })
+            expect(requests).toEqual([])
+          }).pipe(Effect.provide(tmp.context))
+        }),
+      )
+    }
+
     it.live(`reads a discovered external skill reference without another prompt (symlink=${symlink})`, () =>
       Effect.gen(function* () {
         const tmp = yield* fixture(symlink)
         yield* Effect.gen(function* () {
-          const database = yield* Database.Service
           const agents = yield* Agent.Service
           const skills = yield* Skill.Service
           const tools = yield* Tool.Service
           const bus = yield* Bus.Service
           const permission = yield* Permission.Service
-          yield* database.db
-            .insert(ProjectTable)
-            .values({ id: Project.ID.global, worktree: AbsolutePath.make(tmp.project), sandboxes: [] })
-            .run()
-            .pipe(Effect.orDie)
-          yield* database.db
-            .insert(SessionTable)
-            .values({
-              id: sessionID,
-              project_id: Project.ID.global,
-              slug: "skill-resources",
-              directory: tmp.project,
-              title: "Skill resources",
-              version: "test",
-              agent: "build",
-            })
-            .run()
-            .pipe(Effect.orDie)
-          yield* agents.transform((editor) => editor.update(Agent.ID.make("build"), () => {}))
-          yield* ConfigSkillPlugin.Plugin.effect(
-            host({
-              skill: {
-                list: () => Effect.die("unused skill.list"),
-                transform: skills.transform,
-                reload: skills.reload,
-              },
-            }),
-          ).pipe(
-            Effect.provide(
-              Config.testLayer([new Directory({ type: "directory", path: AbsolutePath.make(tmp.config) })]),
-            ),
-            Effect.provideService(SkillDiscovery.Service, { pull: () => Effect.succeed([]) }),
-            Effect.provide(Watcher.testLayer),
-          )
-          yield* registerToolPlugin(SkillTool.Plugin)
-          yield* registerToolPlugin(ReadTool.Plugin)
           const requests: Permission.Request[] = []
           yield* bus.subscribe(Permission.Event.Asked).pipe(
             Stream.runForEach((event) => {
@@ -256,7 +322,7 @@ describe("skill supporting files", () => {
           )
           expect(yield* read(sibling)).toMatchObject({ status: "completed" })
           expect(requests.map((request) => request.action)).toEqual(["external_directory"])
-        }).pipe(Effect.provide(tmp.layer))
+        }).pipe(Effect.provide(tmp.context))
       }),
     )
   }
