@@ -37,6 +37,20 @@ test("opens and searches recent sessions from the new-session button", async ({ 
         recentlyClosed: { local: [] },
       }),
     )
+    localStorage.setItem(
+      "opencode.global.dat:notification",
+      JSON.stringify({
+        list: [
+          {
+            type: "turn-complete",
+            time: Date.now(),
+            viewed: false,
+            session: "ses_7",
+            directory,
+          },
+        ],
+      }),
+    )
   }, directory)
 
   await page.goto("/")
@@ -65,6 +79,12 @@ test("opens and searches recent sessions from the new-session button", async ({ 
     .poll(() => options.evaluateAll((items) => items.map((item) => item.getAttribute("aria-label"))))
     .toEqual([longTitle, "Recent session 6", "Recent session 5", "Recent session 4", "Recent session 3"])
   await expect(popover.getByRole("option", { name: longTitle })).toHaveAttribute("aria-selected", "true")
+  await expect(
+    popover.getByRole("option", { name: longTitle }).locator('[data-component="project-avatar-v2"][data-unread]'),
+  ).toBeVisible()
+  await expect(
+    popover.getByRole("option", { name: "Recent session 6" }).locator('[data-component="project-avatar-v2"][data-unread]'),
+  ).toHaveCount(0)
 
   const title = popover.locator('[data-slot="titlebar-recent-session-title"]').filter({ hasText: longTitle })
   await expect(title).toHaveCSS("text-overflow", "ellipsis")

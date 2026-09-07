@@ -17,7 +17,7 @@ import {
   mergeHomeSessionIndex,
   retainHomeSessions,
 } from "@/home/sessions/index"
-import { SessionTabAvatarView } from "@/shell/layout/session-tab-avatar"
+import { SessionTabAvatar } from "@/shell/layout/session-tab-avatar"
 import {
   buildHomeSessionRecords,
   filterHomeSessionRecords,
@@ -57,6 +57,7 @@ export function TitlebarRecentSessionsPopover(props: {
   let input: HTMLInputElement | undefined
 
   const ctx = createMemo(() => (props.server ? global.ensureServerCtx(props.server) : undefined))
+  const serverKey = createMemo(() => (props.server ? ServerConnection.key(props.server) : undefined))
   const sessionLoad = useQuery(() => {
     const serverCtx = ctx()
     return {
@@ -74,10 +75,9 @@ export function TitlebarRecentSessionsPopover(props: {
     }
   })
   const records = createMemo(() => {
-    const server = props.server
+    const key = serverKey()
     const serverCtx = ctx()
-    if (!server || !serverCtx) return []
-    const key = ServerConnection.key(server)
+    if (!key || !serverCtx) return []
     return buildHomeSessionRecords({
       sessions: () =>
         retainHomeSessions(
@@ -263,6 +263,8 @@ export function TitlebarRecentSessionsPopover(props: {
             >
               <For each={visible()}>
                 {(record) => {
+                  const server = serverKey()
+                  if (!server) return
                   const key = () => homeSessionSearchKey(record)
                   const title = () => sessionLabel(record.session)
                   return (
@@ -277,11 +279,12 @@ export function TitlebarRecentSessionsPopover(props: {
                       onPointerMove={() => setState({ highlighted: key(), keyboardNavigation: false })}
                       onClick={() => select(record)}
                     >
-                      <SessionTabAvatarView
+                      <SessionTabAvatar
                         project={record.project}
                         directory={record.session.location.directory}
-                        unread={false}
-                        loading={false}
+                        sessionId={record.session.id}
+                        server={server}
+                        revealProjectOnHover={false}
                       />
                       <span
                         data-slot="titlebar-recent-session-title"
