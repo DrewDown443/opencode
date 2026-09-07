@@ -146,8 +146,6 @@ export type SessionInboxSyntheticPayload = { text: string; description?: string;
 
 export type SessionInboxCompactionPayload = {}
 
-export type SessionTurnStatus = "running" | "succeeded" | "failed" | "interrupted"
-
 export type InstructionEntryKey = string
 
 export type SessionGenerateResponse = { data: { text: string } }
@@ -557,15 +555,6 @@ export type SessionInboxCompaction = {
   type: "compaction"
   payload: SessionInboxCompactionPayload
   delivery: SessionInboxDelivery
-}
-
-export type SessionTurn = {
-  ordinal: number
-  status: SessionTurnStatus
-  time: { started: number; ended?: number }
-  messages: { first: string; last: string }
-  location: LocationRef
-  files: Array<string>
 }
 
 export type InstructionEntryInfo = { key: InstructionEntryKey; value: JsonValue }
@@ -4149,25 +4138,21 @@ export type SessionContextInput = { readonly sessionID: { readonly sessionID: st
 
 export type SessionContextOutput = { data: Array<SessionMessageInfo> }["data"]
 
-export type SessionTurnsInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
-
-export type SessionTurnsOutput = { data: Array<SessionTurn> }["data"]
-
 export type SessionDiffInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly from?: {
-    readonly from?: number | undefined
-    readonly to?: number | undefined
+  readonly messageID?: {
+    readonly messageID?: string | undefined
+    readonly to?: string | undefined
     readonly context?: number | undefined
-  }["from"]
+  }["messageID"]
   readonly to?: {
-    readonly from?: number | undefined
-    readonly to?: number | undefined
+    readonly messageID?: string | undefined
+    readonly to?: string | undefined
     readonly context?: number | undefined
   }["to"]
   readonly context?: {
-    readonly from?: number | undefined
-    readonly to?: number | undefined
+    readonly messageID?: string | undefined
+    readonly to?: string | undefined
     readonly context?: number | undefined
   }["context"]
 }

@@ -3242,85 +3242,6 @@
         "summary": "Get session context"
       }
     },
-    "/api/session/{sessionID}/turn": {
-      "get": {
-        "tags": ["session"],
-        "operationId": "v2.session.turns",
-        "parameters": [
-          {
-            "name": "sessionID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^ses"
-            },
-            "required": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Session.Turn"
-                      }
-                    }
-                  },
-                  "required": ["data"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "SessionNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "List the session's turns in chronological order. A turn spans one busy period, from prompt promotion until the session goes idle, and includes steers delivered while busy. Forked sessions inherit the turns of their copied history.",
-        "summary": "List session turns"
-      }
-    },
     "/api/session/{sessionID}/diff": {
       "get": {
         "tags": ["session"],
@@ -3336,18 +3257,19 @@
             "required": true
           },
           {
-            "name": "from",
+            "name": "messageID",
             "in": "query",
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^msg_"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "First turn ordinal of the range. Defaults to the first turn when `to` is set, or to the last turn when both are omitted."
+              "description": "User message whose turn to diff. Defaults to the newest user message."
             },
             "required": false
           },
@@ -3357,13 +3279,14 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^msg_"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Last turn ordinal of the range. Defaults to the last turn."
+              "description": "Later user message whose turn ends the range. Defaults to the turn of `messageID` alone."
             },
             "required": false
           },
@@ -3434,13 +3357,13 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "MessageNotFoundError | SessionNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                      "$ref": "#/components/schemas/MessageNotFoundErrorEncoded"
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
@@ -3461,7 +3384,7 @@
             }
           }
         },
-        "description": "Structured per-file diffs of the files changed across a contiguous range of turns, comparing the range's first recorded snapshot with its last. A range whose last step is still running compares against the working copy. Ranges that span a location change are rejected.",
+        "description": "Structured per-file diffs of the files a turn changed. A turn is the assistant steps that follow a user message up to the next user message, so a steer starts a new turn; `to` extends the range through a later turn. Compares the range's first recorded snapshot with its last; a step still running in the active session compares against the working copy. Ranges that span a location change are rejected.",
         "summary": "Diff session turns"
       }
     },
@@ -19159,61 +19082,6 @@
         },
         "required": ["type", "message"],
         "additionalProperties": false
-      },
-      "Session.Turn": {
-        "type": "object",
-        "properties": {
-          "ordinal": {
-            "type": "integer",
-            "exclusiveMinimum": 0
-          },
-          "status": {
-            "$ref": "#/components/schemas/Session.Turn.Status"
-          },
-          "time": {
-            "type": "object",
-            "properties": {
-              "started": {
-                "type": "number"
-              },
-              "ended": {
-                "type": "number"
-              }
-            },
-            "required": ["started"],
-            "additionalProperties": false
-          },
-          "messages": {
-            "type": "object",
-            "properties": {
-              "first": {
-                "type": "string",
-                "pattern": "^msg_"
-              },
-              "last": {
-                "type": "string",
-                "pattern": "^msg_"
-              }
-            },
-            "required": ["first", "last"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/Location.Ref"
-          },
-          "files": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": ["ordinal", "status", "time", "messages", "location", "files"],
-        "additionalProperties": false
-      },
-      "Session.Turn.Status": {
-        "type": "string",
-        "enum": ["running", "succeeded", "failed", "interrupted"]
       },
       "SessionActive": {
         "type": "object",

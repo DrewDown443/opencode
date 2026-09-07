@@ -68,8 +68,6 @@ import type {
   SessionRevertCommitOutput,
   SessionContextInput,
   SessionContextOutput,
-  SessionTurnsInput,
-  SessionTurnsOutput,
   SessionDiffInput,
   SessionDiffOutput,
   SessionInboxListInput,
@@ -598,19 +596,11 @@ const EndpointSessionContext = (raw: RawClient["server.session"]) => (input: Ses
     ),
   )
 
-const EndpointSessionTurns = (raw: RawClient["server.session"]) => (input: SessionTurnsInput) =>
-  preserveEffect<SessionTurnsOutput>()(
-    raw["session.turns"]({ params: { sessionID: input["sessionID"] } }).pipe(
-      Effect.mapError(mapClientError),
-      Effect.map((value) => value.data),
-    ),
-  )
-
 const EndpointSessionDiff = (raw: RawClient["server.session"]) => (input: SessionDiffInput) =>
   preserveEffect<SessionDiffOutput>()(
     raw["session.diff"]({
       params: { sessionID: input["sessionID"] },
-      query: { from: input["from"], to: input["to"], context: input["context"] },
+      query: { messageID: input["messageID"], to: input["to"], context: input["context"] },
     }).pipe(
       Effect.mapError(mapClientError),
       Effect.map((value) => value.data),
@@ -767,7 +757,6 @@ const adaptGroupSession = (raw: RawClient["server.session"]) => ({
     commit: EndpointSessionRevertCommit(raw),
   },
   context: EndpointSessionContext(raw),
-  turns: EndpointSessionTurns(raw),
   diff: EndpointSessionDiff(raw),
   inbox: {
     list: EndpointSessionInboxList(raw),

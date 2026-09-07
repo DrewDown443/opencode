@@ -57,7 +57,7 @@ import { SessionModelTransport } from "./session/model-transport.js"
 import { llmClient } from "./effect/app-node-platform.js"
 import { Snapshot } from "./snapshot.js"
 import { Session } from "./session/session.js"
-import { SessionTurn, TurnRangeError } from "./session/turn.js"
+import { SessionDiff, TurnRangeError } from "./session/diff.js"
 import { LocationServiceMap } from "./location-service-map.js"
 import { FSUtil } from "@opencode-ai/util/fs-util"
 import type { EventLog } from "@opencode-ai/schema/event-log"
@@ -146,15 +146,13 @@ export interface Interface {
   readonly context: (
     sessionID: SessionSchema.ID,
   ) => Effect.Effect<SessionMessage.Info[], NotFoundError | MessageDecodeError>
-  /** Turns in chronological order, including those a fork inherited; see `SessionTurn.list`. */
-  readonly turns: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Turn[], NotFoundError>
-  /** Structured diffs of the files changed across a contiguous turn range; see `SessionTurn.diff`. */
+  /** Structured diffs of the files changed by a turn or range of turns; see `SessionDiff.turn`. */
   readonly diff: (input: {
     readonly sessionID: SessionSchema.ID
-    readonly from?: number
-    readonly to?: number
+    readonly messageID?: SessionMessage.ID
+    readonly to?: SessionMessage.ID
     readonly context?: number
-  }) => Effect.Effect<readonly FileDiff.Info[], NotFoundError | TurnRangeError | Snapshot.Error>
+  }) => Effect.Effect<readonly FileDiff.Info[], NotFoundError | MessageNotFoundError | TurnRangeError | Snapshot.Error>
   /**
    * Durable admitted session work not yet visible in projected history,
    * ordered by admission. Includes unpromoted user and synthetic inputs and
@@ -376,16 +374,16 @@ const layer = Layer.effect(
         yield* result.get(sessionID)
         return yield* store.context(sessionID)
       }),
-      turns: Effect.fn("Session.turns")(function* (sessionID) {
-        const session = yield* result.get(sessionID)
-        return (yield* SessionTurn.list(db, session)).map((entry) => entry.turn)
-      }),
       diff: Effect.fn("Session.diff")(function* (input) {
         const session = yield* result.get(input.sessionID)
-        return yield* SessionTurn.diff({ session, from: input.from, to: input.to, context: input.context }).pipe(
-          Effect.provideService(Database.Service, database),
-          Effect.provideService(LocationServiceMap.Service, locations),
-        )
+        const active = yield* execution.isActive(input.sessionID)
+        return yield* SessionDiff.turn(db, locations, {
+          session,
+          active,
+          messageID: input.messageID,
+          to: input.to,
+          context: input.context,
+        })
       }),
       inbox: (sessionID) => sessions.forSession(sessionID).inbox(),
       cancelInbox: (input) => sessions.forSession(input.sessionID).cancelInbox(input.inboxID),

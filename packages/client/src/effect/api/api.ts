@@ -360,14 +360,10 @@ export type SessionContextInput = { readonly sessionID: Session.ID }
 export type SessionContextOutput = ReadonlyArray<SessionMessage.Info>
 export type SessionContextOperation<E = never> = (input: SessionContextInput) => Effect.Effect<SessionContextOutput, E>
 
-export type SessionTurnsInput = { readonly sessionID: Session.ID }
-export type SessionTurnsOutput = ReadonlyArray<Session.Turn>
-export type SessionTurnsOperation<E = never> = (input: SessionTurnsInput) => Effect.Effect<SessionTurnsOutput, E>
-
 export type SessionDiffInput = {
   readonly sessionID: Session.ID
-  readonly from?: number | undefined
-  readonly to?: number | undefined
+  readonly messageID?: SessionMessage.ID | undefined
+  readonly to?: SessionMessage.ID | undefined
   readonly context?: number | undefined
 }
 export type SessionDiffOutput = ReadonlyArray<FileDiff.Info>
@@ -1132,7 +1128,6 @@ export interface SessionApi<E = never> {
     readonly commit: SessionRevertCommitOperation<E>
   }
   readonly context: SessionContextOperation<E>
-  readonly turns: SessionTurnsOperation<E>
   readonly diff: SessionDiffOperation<E>
   readonly inbox: {
     readonly list: SessionInboxListOperation<E>

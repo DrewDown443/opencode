@@ -7,6 +7,3 @@ export type ID = typeof ID.Type
 
 export const Info = Session.Info
 export type Info = Session.Info
-
-export const Turn = Session.Turn
-export type Turn = Session.Turn

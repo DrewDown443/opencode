@@ -13,7 +13,6 @@ import { Money } from "./money.js"
 import { TokenUsage } from "./token-usage.js"
 import { Revert } from "./session-revert.js"
 import { SessionFork } from "./session-fork.js"
-import { Turn } from "./session-turn.js"
 
 export const ID = SessionID
 export type ID = SessionID
@@ -23,7 +22,7 @@ export type Metadata = SessionMetadata
 
 export const Event = SessionEvent
 
-export { Revert, Turn }
+export { Revert }
 export const ForkBoundary = SessionFork.Boundary
 export type ForkBoundary = SessionFork.Boundary
 export const ForkRequestBoundary = SessionFork.RequestBoundary

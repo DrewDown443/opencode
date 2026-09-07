@@ -62,8 +62,6 @@ import type {
   SessionRevertCommitOutput,
   SessionContextInput,
   SessionContextOutput,
-  SessionTurnsInput,
-  SessionTurnsOutput,
   SessionDiffInput,
   SessionDiffOutput,
   SessionInboxListInput,
@@ -848,23 +846,12 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
-      turns: (input: SessionTurnsInput, requestOptions?: RequestOptions) =>
-        request<{ readonly data: SessionTurnsOutput }>(
-          {
-            method: "GET",
-            path: `/api/session/${encodeURIComponent(input.sessionID)}/turn`,
-            successStatus: 200,
-            declaredStatuses: [400, 401, 404],
-            empty: false,
-          },
-          requestOptions,
-        ).then((value) => value.data),
       diff: (input: SessionDiffInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: SessionDiffOutput }>(
           {
             method: "GET",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/diff`,
-            query: { from: input["from"], to: input["to"], context: input["context"] },
+            query: { messageID: input["messageID"], to: input["to"], context: input["context"] },
             successStatus: 200,
             declaredStatuses: [400, 401, 404, 500],
             empty: false,

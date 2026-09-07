@@ -1,8 +1,8 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "c4543fe3-290f-444f-8460-c0164b7a33d1",
-  "prevIds": ["be60f352-8da1-40e1-8d70-dc41121cfbc5"],
+  "id": "be60f352-8da1-40e1-8d70-dc41121cfbc5",
+  "prevIds": ["3fb67508-0196-4bae-b2bd-c08ece7583fd"],
   "ddl": [
     {
       "name": "account_state",
@@ -70,10 +70,6 @@
     },
     {
       "name": "session_v2",
-      "entityType": "tables"
-    },
-    {
-      "name": "session_turn",
       "entityType": "tables"
     },
     {
@@ -1426,66 +1422,6 @@
     },
     {
       "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "session_id",
-      "entityType": "columns",
-      "table": "session_turn"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "start_seq",
-      "entityType": "columns",
-      "table": "session_turn"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "end_seq",
-      "entityType": "columns",
-      "table": "session_turn"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "status",
-      "entityType": "columns",
-      "table": "session_turn"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "time_started",
-      "entityType": "columns",
-      "table": "session_turn"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "time_ended",
-      "entityType": "columns",
-      "table": "session_turn"
-    },
-    {
-      "type": "text",
       "notNull": false,
       "autoincrement": false,
       "default": null,
@@ -1685,17 +1621,6 @@
       "table": "session_v2"
     },
     {
-      "columns": ["session_id"],
-      "tableTo": "session_v2",
-      "columnsTo": ["id"],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_session_turn_session_id_session_v2_id_fk",
-      "entityType": "fks",
-      "table": "session_turn"
-    },
-    {
       "columns": ["project_id"],
       "tableTo": "project",
       "columnsTo": ["id"],
@@ -1726,13 +1651,6 @@
       "name": "instruction_entry_pk",
       "entityType": "pks",
       "table": "instruction_entry"
-    },
-    {
-      "columns": ["session_id", "start_seq"],
-      "nameExplicit": false,
-      "name": "session_turn_pk",
-      "entityType": "pks",
-      "table": "session_turn"
     },
     {
       "columns": ["project_id", "directory"],
