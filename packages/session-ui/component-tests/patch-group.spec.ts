@@ -8,7 +8,7 @@ for (const tool of ["patch", "edit", "write", "mixed"]) {
     await expect(patches).toHaveCount(1)
     await expect(patches.getByText("2 files", { exact: true })).toBeVisible()
     await expect(
-      patches.getByText(tool === "mixed" ? "Edit" : `${tool[0].toUpperCase()}${tool.slice(1)}`, { exact: true }),
+      patches.getByLabel(tool === "mixed" ? "Edit" : `${tool[0].toUpperCase()}${tool.slice(1)}`, { exact: true }),
     ).toBeVisible()
     const first = patches.locator('[data-scope="apply-patch"] button').filter({ hasText: "a.ts" })
     await first.click()
@@ -25,7 +25,9 @@ for (const tool of ["patch", "edit", "write", "mixed"]) {
     await expect(patches.getByText("3 files", { exact: true })).toBeVisible()
     await expect(patches.locator('[data-slot="apply-patch-filename"]')).toHaveText(["a.ts", "b.ts", "c.ts"])
     await expect(first).toHaveAttribute("aria-expanded", "true")
-    await expect(patches.locator('[data-component="file"]').first()).toBeVisible()
+    await expect(patches.locator('[data-component="file"]')).toHaveCount(2)
+    await expect(patches.locator('[data-component="file"]').nth(0)).toBeVisible()
+    await expect(patches.locator('[data-component="file"]').nth(1)).toBeVisible()
     await expect(patches.locator('[data-component="apply-patch-file-diff"]')).toHaveCount(2)
     await group.screenshot({ path: info.outputPath("merged.png") })
   })
@@ -33,6 +35,8 @@ for (const tool of ["patch", "edit", "write", "mixed"]) {
   for (const separator of ["shell", "error", "reasoning"]) {
     story(`does not merge ${tool} calls across an intervening ${separator}`, async ({ mount }) => {
       const root = await mount("current-tool-group--patch-follow-ups", { args: { separator, tool } })
+      await expect(root.locator("[data-file-tool]")).toHaveAttribute("data-file-tool", tool)
+      await expect(root.locator("[data-file-separator]")).toHaveAttribute("data-file-separator", separator)
       await root.getByRole("button", { name: "Finish follow-up patch" }).click()
       const group = root.locator('[data-component="collapsed-tool-group"]')
       await expect(group.locator('[data-component="apply-patch-tool"]')).toHaveCount(2)
@@ -67,7 +71,7 @@ for (const placement of ["separate", "grouped"]) {
       const stacks = timeline.locator('[data-component="apply-patch-tool"]')
       const first = stacks.first().locator('[data-scope="apply-patch"] button').filter({ hasText: "a.ts" })
       await expect(stacks).toHaveCount(1)
-      await first.click()
+      if (placement === "grouped") await first.click()
       await expect(first).toHaveAttribute("aria-expanded", "true")
       await root.getByRole("button", { name: "Hide thoughts", exact: true }).click()
       await root.getByRole("button", { name: "Finish follow-up patch" }).click()

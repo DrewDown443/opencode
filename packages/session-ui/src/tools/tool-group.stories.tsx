@@ -5,7 +5,6 @@ import { CurrentSessionProviders } from "../storybook/current-session-story"
 import { storyDocument, storyTool } from "../storybook/current-session-scenarios"
 import { type ContextGroupPart, CurrentContextToolGroup } from "./tool-renderer"
 import { SessionTimeline } from "../timeline/session-timeline"
-import { timelinePresets } from "../timeline/detail"
 
 export default {
   title: "OpenCode/Work/Tool group",
@@ -162,8 +161,13 @@ export const PatchFollowUps = {
             ...changes(true),
           ]),
     ])
+    const document = createMemo(() => storyDocument(parts()))
     return (
-      <section class="mx-auto flex w-full max-w-[860px] flex-col gap-4 p-6">
+      <section
+        class="mx-auto flex w-full max-w-[860px] flex-col gap-4 p-6"
+        data-file-tool={args.tool}
+        data-file-separator={args.separator}
+      >
         <div class="flex flex-wrap gap-3">
           <button type="button" onClick={() => setState("phase", "running")}>
             Start follow-up patch
@@ -177,7 +181,7 @@ export const PatchFollowUps = {
             </button>
           </Show>
         </div>
-        <CurrentSessionProviders document={storyDocument(parts())}>
+        <CurrentSessionProviders document={document()}>
           <Show
             when={args.placement !== "used"}
             fallback={
@@ -189,13 +193,7 @@ export const PatchFollowUps = {
               />
             }
           >
-            <SessionTimeline
-              document={storyDocument(parts())}
-              timelineDetail={{
-                ...timelinePresets[2].value,
-                edit: { placement: args.placement === "separate" ? "separate" : "grouped", details: "collapsed" },
-              }}
-            />
+            <SessionTimeline document={document()} editToolDefaultOpen={args.placement === "separate"} />
           </Show>
         </CurrentSessionProviders>
       </section>

@@ -12,7 +12,6 @@ import {
 import { storyDocument, storyPatchFile, storyTool } from "../storybook/current-session-scenarios"
 import { SessionTimeline } from "./session-timeline"
 import { ToolDisplay } from "../tools/tool-renderer"
-import { timelinePresets } from "./detail"
 
 export default {
   title: "OpenCode/Work/File changes",
@@ -331,13 +330,7 @@ export const FileToolFallbacks = {
         </button>
         <CurrentSessionProviders document={document()}>
           {args.timeline ? (
-            <SessionTimeline
-              document={document()}
-              timelineDetail={{
-                ...timelinePresets[2].value,
-                edit: { placement: args.placement, details: "expanded" },
-              }}
-            />
+            <SessionTimeline document={document()} editToolDefaultOpen={args.placement === "separate"} />
           ) : (
             <ToolDisplay
               id="tool_file_fallback"
