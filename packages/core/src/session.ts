@@ -1,10 +1,10 @@
 export * as Session from "./session.js"
 export * from "./session/schema.js"
 
-import { Effect, Layer, Schema, Context, Stream } from "effect"
+import { DateTime, Effect, Layer, Schema, Context, Stream } from "effect"
 import { LLMClient } from "@opencode/ai"
 import { ListAnchor } from "@opencode/schema/session"
-import { and, asc, desc, eq, or, sql } from "drizzle-orm"
+import { and, desc, eq } from "drizzle-orm"
 import { Project } from "./project.js"
 import { Model } from "@opencode/schema/model"
 import { Location } from "./location.js"
@@ -84,6 +84,7 @@ type CreateBaseInput = {
   agent?: Agent.ID
   model?: Model.Ref
   metadata?: SessionSchema.Metadata
+  messages?: readonly SessionMessage.Info[]
 }
 type CreateInput = CreateBaseInput &
   ({ location: Location.Ref; parentID?: never } | { parentID: SessionSchema.ID; location?: never })
@@ -93,12 +94,6 @@ type CompactInput = Parameters<Session.Handle["compact"]>[0] & { sessionID: Sess
 type ForkInput = {
   sessionID: SessionSchema.ID
   boundary: SessionSchema.ForkRequestBoundary
-  start?: SessionMessage.ID
-  child?: Pick<CreateBaseInput, "title" | "agent" | "model"> & { type: "child" }
-}
-type ForkChildInput = Pick<CreateBaseInput, "title" | "agent" | "model"> & {
-  sessionID: SessionSchema.ID
-  history: "all" | { last: number }
 }
 
 export {
@@ -127,9 +122,6 @@ export interface Interface {
   readonly create: (input: CreateInput) => Effect.Effect<SessionSchema.Info, NotFoundError>
   readonly fork: (
     input: ForkInput,
-  ) => Effect.Effect<SessionSchema.Info, NotFoundError | MessageNotFoundError | ForkEmptyError>
-  readonly forkChild: (
-    input: ForkChildInput,
   ) => Effect.Effect<SessionSchema.Info, NotFoundError | MessageNotFoundError | ForkEmptyError>
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info, NotFoundError>
   readonly environment: (input: {
@@ -241,6 +233,7 @@ const layer = Layer.effect(
     const environments = yield* SessionEnvironment.Service
     const sessions = yield* Session.make()
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
+    const encodeMessage = Schema.encodeSync(SessionMessage.Info)
 
     const result = Service.of({
       create: Effect.fn("Session.create")(function* (input) {
@@ -253,6 +246,19 @@ const layer = Layer.effect(
         if (location === undefined)
           return yield* Effect.die(new Error("Session.create requires either location or an existing parentID"))
         const project = yield* projects.resolve(location.directory)
+        const messages = (input.messages ?? []).map((message, index) => {
+          const id = SessionMessage.ID.create()
+          const encoded = encodeMessage(message)
+          const { id: _, type, ...data } = encoded
+          return {
+            id,
+            session_id: sessionID,
+            type,
+            seq: index + 1,
+            time_created: DateTime.toEpochMillis(message.time.created),
+            data,
+          }
+        })
         const projected = yield* bus
           .publish(
             SessionEvent.Created,
@@ -277,7 +283,17 @@ const layer = Layer.effect(
                   }
                 : undefined,
             },
-            { location },
+            {
+              location,
+              commit: (seq) =>
+                messages.length === 0
+                  ? Effect.void
+                  : db
+                      .insert(SessionMessageTable)
+                      .values(messages)
+                      .run()
+                      .pipe(Effect.andThen(Bus.reserveSequence(db, sessionID, seq + messages.length)), Effect.orDie),
+            },
           )
           .pipe(
             Effect.as({ type: "created" } as const),
@@ -307,13 +323,7 @@ const layer = Layer.effect(
           .where(
             and(
               eq(SessionMessageTable.session_id, input.sessionID),
-              input.boundary.type === "before"
-                ? eq(SessionMessageTable.id, input.boundary.messageID)
-                : and(
-                    sql`${SessionMessageTable.type} != 'assistant' or json_extract(${SessionMessageTable.data}, '$.time.completed') is not null`,
-                    sql`${SessionMessageTable.type} != 'shell' or json_extract(${SessionMessageTable.data}, '$.status') != 'running'`,
-                    sql`${SessionMessageTable.type} != 'compaction' or json_extract(${SessionMessageTable.data}, '$.status') != 'running'`,
-                  ),
+              input.boundary.type === "before" ? eq(SessionMessageTable.id, input.boundary.messageID) : undefined,
             ),
           )
           .orderBy(desc(SessionMessageTable.seq))
@@ -325,24 +335,7 @@ const layer = Layer.effect(
             sessionID: input.sessionID,
             messageID: input.boundary.messageID,
           })
-        if (!boundary && input.child)
-          return yield* result.create({
-            parentID: parent.id,
-            title: input.child.title,
-            agent: input.child.agent,
-            model: input.child.model,
-          })
         if (!boundary) return yield* new ForkEmptyError({ sessionID: input.sessionID })
-        const start = input.start
-          ? yield* db
-              .select({ id: SessionMessageTable.id })
-              .from(SessionMessageTable)
-              .where(and(eq(SessionMessageTable.session_id, input.sessionID), eq(SessionMessageTable.id, input.start)))
-              .get()
-              .pipe(Effect.orDie)
-          : undefined
-        if (input.start && !start)
-          return yield* new MessageNotFoundError({ sessionID: input.sessionID, messageID: input.start })
         const sessionID = SessionSchema.ID.create()
         const inherited = yield* db
           .transaction(() =>
@@ -359,61 +352,9 @@ const layer = Layer.effect(
           sessionID,
           parentID: parent.id,
           boundary: { ...input.boundary, messageID: boundary.id },
-          start: start?.id,
-          child: input.child,
           ...inherited,
         })
         return yield* result.get(sessionID).pipe(Effect.orDie)
-      }),
-      forkChild: Effect.fn("Session.forkChild")(function* (input) {
-        if (input.history === "all")
-          return yield* result.fork({
-            sessionID: input.sessionID,
-            boundary: { type: "through" },
-            child: { type: "child", title: input.title, agent: input.agent, model: input.model },
-          })
-        const where = and(
-          eq(SessionMessageTable.session_id, input.sessionID),
-          or(
-            eq(SessionMessageTable.type, "user"),
-            and(
-              eq(SessionMessageTable.type, "synthetic"),
-              sql`json_extract(${SessionMessageTable.data}, '$.metadata.source') = 'subagent'`,
-            ),
-          ),
-        )
-        const selected = yield* db
-          .select({ id: SessionMessageTable.id })
-          .from(SessionMessageTable)
-          .where(where)
-          .orderBy(desc(SessionMessageTable.seq))
-          .limit(1)
-          .offset(input.history.last - 1)
-          .get()
-          .pipe(Effect.orDie)
-        const start =
-          selected ??
-          (yield* db
-            .select({ id: SessionMessageTable.id })
-            .from(SessionMessageTable)
-            .where(where)
-            .orderBy(asc(SessionMessageTable.seq))
-            .limit(1)
-            .get()
-            .pipe(Effect.orDie))
-        if (!start)
-          return yield* result.create({
-            parentID: input.sessionID,
-            title: input.title,
-            agent: input.agent,
-            model: input.model,
-          })
-        return yield* result.fork({
-          sessionID: input.sessionID,
-          boundary: { type: "through" },
-          start: start.id,
-          child: { type: "child", title: input.title, agent: input.agent, model: input.model },
-        })
       }),
       get: (sessionID) => sessions.forSession(sessionID).get(),
       environment: Effect.fn("Session.environment")(function* (input) {

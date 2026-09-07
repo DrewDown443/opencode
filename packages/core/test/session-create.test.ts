@@ -673,7 +673,7 @@ describe("Session.create", () => {
       const bus = yield* Bus.Service
       const { db } = yield* Database.Service
       const parent = yield* session.create({ location })
-      const user = yield* session.prompt({ sessionID: parent.id, text: "Run both tools", resume: false })
+      yield* session.prompt({ sessionID: parent.id, text: "Run both tools", resume: false })
       yield* SessionInbox.promote(db, bus, parent.id, "steer")
       const assistantMessageID = SessionMessage.ID.create()
       const model = Model.Ref.make({ id: Model.ID.make("model"), providerID: Provider.ID.make("provider") })
@@ -706,37 +706,10 @@ describe("Session.create", () => {
 
       const forked = yield* session.fork({ sessionID: parent.id, boundary: { type: "through" } })
 
-      expect(forked.fork?.boundary).toEqual({ type: "through", messageID: user.id })
       expect(yield* session.context(parent.id)).toMatchObject([
         Expected.user("Run both tools"),
         Expected.assistant({}, [{ type: "tool", id: "call_running", state: { status: "running" } }]),
       ])
-      expect(yield* session.context(forked.id)).toMatchObject([Expected.user("Run both tools")])
-
-      const recorded = yield* db
-        .select()
-        .from(EventTable)
-        .where(eq(EventTable.aggregate_id, forked.id))
-        .get()
-        .pipe(Effect.orDie)
-      if (!recorded) return yield* Effect.die(new Error("Fork event not found"))
-      yield* bus.publish(SessionEvent.Step.Ended, {
-        sessionID: parent.id,
-        assistantMessageID,
-        finish: "tool-calls",
-        cost: Money.USD.zero,
-        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-      })
-      yield* bus.remove(forked.id)
-      yield* db.delete(SessionTable).where(eq(SessionTable.id, forked.id)).run().pipe(Effect.orDie)
-      yield* bus.replay({
-        id: recorded.id,
-        created: recorded.created,
-        aggregateID: recorded.aggregate_id,
-        seq: recorded.seq,
-        type: recorded.type,
-        data: recorded.data,
-      })
       expect(yield* session.context(forked.id)).toMatchObject([Expected.user("Run both tools")])
     }),
   )

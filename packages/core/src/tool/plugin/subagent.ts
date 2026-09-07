@@ -8,6 +8,7 @@ import { Config } from "../../config.js"
 import { Job } from "../../job.js"
 import { Permission } from "../../permission.js"
 import { Session } from "../../session.js"
+import { SessionMessage } from "../../session/message.js"
 import { SessionSchema } from "../../session/schema.js"
 import { SubagentCompletion } from "../../session/subagent-completion.js"
 import { SubagentJob } from "../../session/subagent-job.js"
@@ -23,6 +24,41 @@ const backgroundResult = (sessionID: SessionSchema.ID) => ({
     "Work on non-overlapping tasks, or briefly tell the user what you launched and end your response.",
   ].join("\n"),
 })
+
+const forkMessages = (messages: readonly SessionMessage.Info[], turns: "all" | number) => {
+  const boundaries = messages.flatMap((message, index) =>
+    message.type === "user" || (message.type === "synthetic" && message.metadata?.source === "subagent") ? [index] : [],
+  )
+  const start = turns === "all" ? 0 : (boundaries.at(-turns) ?? boundaries[0] ?? messages.length)
+  return messages.slice(start).flatMap((message): SessionMessage.Info[] => {
+    if (message.type === "user" || message.type === "system" || message.type === "skill") return [message]
+    if (message.type === "compaction") return message.status === "completed" ? [message] : []
+    if (
+      message.type !== "assistant" ||
+      !message.time.completed ||
+      !message.finish ||
+      message.finish === "tool-calls" ||
+      message.finish === "error"
+    )
+      return []
+    const content = message.content.filter((item) => item.type === "text" && item.text.length > 0)
+    return content.length > 0
+      ? [
+          SessionMessage.Assistant.make({
+            id: message.id,
+            type: "assistant",
+            agent: message.agent,
+            model: message.model,
+            content,
+            finish: message.finish,
+            rawFinish: message.rawFinish,
+            metadata: message.metadata,
+            time: message.time,
+          }),
+        ]
+      : []
+  })
+}
 
 export const Input = Schema.Struct({
   agent: Schema.String.annotate({ description: "The type of specialized agent to use for this task" }),
@@ -163,27 +199,35 @@ export const Plugin = {
 
               // Model selection is policy/config/session state, not an LLM-facing tool argument.
               const model = agent.model ?? parent.model
-              const childConfig = {
-                title: input.description,
-                agent: agent.id,
-                model,
-              }
+              const messages =
+                existing || forkTurns === "none"
+                  ? []
+                  : forkMessages(
+                      yield* sessions
+                        .context(parent.id)
+                        .pipe(
+                          Effect.mapError(
+                            (error) =>
+                              new ToolFailure({ message: `Failed to load parent context: ${parent.id}`, error }),
+                          ),
+                        ),
+                      forkTurns,
+                    )
               const child =
                 existing ??
-                (yield* (
-                  forkTurns === "none"
-                    ? sessions.create({ parentID: context.sessionID, ...childConfig })
-                    : sessions.forkChild({
-                        sessionID: context.sessionID,
-                        history: forkTurns === "all" ? "all" : { last: forkTurns },
-                        ...childConfig,
-                      })
-                ).pipe(
-                  Effect.mapError(
-                    (error) =>
-                      new ToolFailure({ message: `Failed to create subagent session: ${error.message}`, error }),
-                  ),
-                ))
+                (yield* sessions
+                  .create({
+                    parentID: context.sessionID,
+                    title: input.description,
+                    agent: agent.id,
+                    model,
+                    messages,
+                  })
+                  .pipe(
+                    Effect.mapError(
+                      (error) => new ToolFailure({ message: `Parent session not found: ${context.sessionID}`, error }),
+                    ),
+                  ))
 
               const background = input.background === true
               yield* context.progress({ sessionID: child.id, status: "running" })

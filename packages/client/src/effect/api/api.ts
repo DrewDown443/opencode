@@ -518,15 +518,6 @@ export type SessionLogOutput =
             readonly sessionID: Session.ID
             readonly parentID: Session.ID
             readonly boundary: Session.ForkBoundary
-            readonly start?: SessionMessage.ID | undefined
-            readonly child?:
-              | {
-                  readonly type: "child"
-                  readonly title?: string | undefined
-                  readonly agent?: Agent.ID | undefined
-                  readonly model?: Model.Ref | undefined
-                }
-              | undefined
             readonly instructions?:
               | { readonly [x: string & Brand.Brand<"Instruction.Key">]: string & Brand.Brand<"Instruction.Hash"> }
               | undefined

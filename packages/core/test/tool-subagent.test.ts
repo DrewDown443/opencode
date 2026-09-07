@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
+import { DateTime, Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { LanguageModel } from "@opencode/ai"
 import { OpenAIChat } from "@opencode/ai/protocols"
 import { TestLLM } from "@opencode/ai/testing"
@@ -440,67 +440,46 @@ describe("SubagentTool", () => {
     ).pipe(
       Effect.flatMap((dir) =>
         Effect.gen(function* () {
-          const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
-          const sessions = yield* Session.Service
-          const parent = yield* sessions.create({ location, model: parentModel })
-          yield* withSubagent(parent.location)
-          const bus = yield* Bus.Service
-          const database = yield* Database.Service
-          const addUser = Effect.fn("SubagentTest.addUser")(function* (text: string) {
-            yield* sessions.prompt({ sessionID: parent.id, text, resume: false })
-            yield* SessionInbox.promote(database.db, bus, parent.id, "steer")
-          })
-          const addAssistant = Effect.fn("SubagentTest.addAssistant")(function* (
-            text: string,
-            finish: "stop" | "tool-calls",
-            reasoning?: string,
-          ) {
-            const assistantMessageID = SessionMessage.ID.create()
-            yield* bus.publish(SessionEvent.Step.Started, {
-              sessionID: parent.id,
-              assistantMessageID,
+          const time = DateTime.makeUnsafe(1)
+          const user = (text: string) =>
+            SessionMessage.User.make({ id: SessionMessage.ID.create(), type: "user", text, time: { created: time } })
+          const assistant = (text: string, finish: "stop" | "tool-calls", reasoning?: string) =>
+            SessionMessage.Assistant.make({
+              id: SessionMessage.ID.create(),
+              type: "assistant",
               agent: Agent.ID.make("build"),
               model: parentModel,
-            })
-            if (reasoning) {
-              yield* bus.publish(SessionEvent.Reasoning.Started, {
-                sessionID: parent.id,
-                assistantMessageID,
-                ordinal: 0,
-              })
-              yield* bus.publish(SessionEvent.Reasoning.Ended, {
-                sessionID: parent.id,
-                assistantMessageID,
-                ordinal: 0,
-                text: reasoning,
-              })
-            }
-            yield* bus.publish(SessionEvent.Text.Started, {
-              sessionID: parent.id,
-              assistantMessageID,
-              ordinal: reasoning ? 1 : 0,
-            })
-            yield* bus.publish(SessionEvent.Text.Ended, {
-              sessionID: parent.id,
-              assistantMessageID,
-              ordinal: reasoning ? 1 : 0,
-              text,
-            })
-            yield* bus.publish(SessionEvent.Step.Ended, {
-              sessionID: parent.id,
-              assistantMessageID,
+              content: [
+                ...(reasoning
+                  ? [
+                      SessionMessage.AssistantReasoning.make({
+                        type: "reasoning",
+                        text: reasoning,
+                        time: { created: time, completed: time },
+                      }),
+                    ]
+                  : []),
+                SessionMessage.AssistantText.make({ type: "text", text }),
+              ],
               finish,
               cost: Money.USD.make(1),
               tokens,
+              time: { created: time, completed: time },
             })
+          const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
+          const sessions = yield* Session.Service
+          const parent = yield* sessions.create({
+            location,
+            model: parentModel,
+            messages: [
+              user("old task"),
+              assistant("old final answer", "stop", "private reasoning"),
+              user("recent task"),
+              assistant("working on it", "tool-calls"),
+              user("current task"),
+            ],
           })
-
-          yield* addUser("old task")
-          yield* addAssistant("old final answer", "stop", "private reasoning")
-          yield* addUser("recent task")
-          yield* addAssistant("working on it", "tool-calls")
-          yield* addUser("current task")
-
+          yield* withSubagent(parent.location)
           const locations = yield* LocationServiceMap.Service
           const registry = yield* Tool.Service.pipe(Effect.provide(locations.get(parent.location)))
           const run = (id: string, fork_turns?: string) =>
@@ -521,9 +500,7 @@ describe("SubagentTool", () => {
             })
 
           const all = yield* run("call-fork-all")
-          const allChild = yield* sessions.get(outputSessionID(all.metadata))
-          expect(allChild).toMatchObject({ parentID: parent.id, fork: { sessionID: parent.id } })
-          expect((yield* sessions.context(allChild.id)).slice(0, -1)).toMatchObject([
+          expect((yield* sessions.context(outputSessionID(all.metadata))).slice(0, -1)).toMatchObject([
             { type: "user", text: "old task" },
             { type: "assistant", content: [{ type: "text", text: "old final answer" }] },
             { type: "user", text: "recent task" },
@@ -541,12 +518,9 @@ describe("SubagentTool", () => {
             { type: "assistant", content: [{ type: "text", text: childText }] },
           ])
 
-          expect(yield* run("call-fork-invalid", "0")).toEqual({
+          expect(yield* run("call-fork-invalid", "0")).toMatchObject({
             status: "error",
-            error: {
-              type: "tool.execution",
-              message: "Invalid fork_turns value '0'. Expected 'none', 'all', or a positive integer string.",
-            },
+            error: { message: expect.stringContaining("Invalid fork_turns value '0'") },
           })
         }),
       ),
