@@ -156,13 +156,11 @@ const layer = Layer.effect(
 
     const diff = Effect.fn("Snapshot.diff")(function* (input: DiffInput) {
       const comparison = yield* compare("diff", input)
-      return yield* git.tree
-        .diff({
-          ...comparison.input,
-          context: input.context,
-          paths: (input.paths ?? comparison.files).filter((file) => !comparison.ignored.has(file)),
-        })
+      // Only an explicit selection becomes a pathspec; ignored paths are dropped from the result instead.
+      const diffs = yield* git.tree
+        .diff({ ...comparison.input, context: input.context, paths: input.paths })
         .pipe(Effect.mapError((cause) => failure("diff", cause)))
+      return diffs.filter((file) => !comparison.ignored.has(RelativePath.make(file.file)))
     })
 
     const plan = Effect.fnUntraced(function* (worktree: AbsolutePath, input: RestoreInput) {

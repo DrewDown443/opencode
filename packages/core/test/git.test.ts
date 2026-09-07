@@ -6,6 +6,7 @@ import { Effect } from "effect"
 import { LayerNode } from "@opencode-ai/util/effect/layer-node"
 import { Git } from "@opencode-ai/core/git"
 import { AbsolutePath, RelativePath } from "@opencode-ai/core/schema"
+import { VcsPatch } from "@opencode-ai/core/vcs/patch"
 import { branch, commit, initRepo, read, withRemote } from "./fixture/git"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
@@ -193,6 +194,38 @@ describe("Git trees", () => {
         ["new name.txt", "added"],
         ["old name.txt", "deleted"],
       ])
+    }),
+  )
+
+  it.live("caps batched tree patches and keeps per-file stats past the cap", () =>
+    Effect.gen(function* () {
+      const root = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+      )
+      yield* Effect.promise(() => initRepo(root.path))
+      const git = yield* Git.Service
+      const repository = yield* git.repo.discover(AbsolutePath.make(root.path))
+      if (!repository) throw new Error("Repository not found")
+      const before = yield* git.tree.capture({ repository, scopes: [RelativePath.make(".")] })
+      const lines = Math.ceil(VcsPatch.MAX_TOTAL_PATCH_BYTES / 80) + 1
+      yield* Effect.promise(async () => {
+        await Bun.write(path.join(root.path, "a-small.txt"), "small\n")
+        await Bun.write(path.join(root.path, "b-large.txt"), `${"x".repeat(79)}\n`.repeat(lines))
+        await Bun.write(path.join(root.path, "c-binary.bin"), new Uint8Array([0, 1, 2, 3]))
+      })
+      const after = yield* git.tree.capture({ repository, scopes: [RelativePath.make(".")] })
+
+      const diffs = yield* git.tree.diff({ repository, from: before, to: after, context: 0 })
+      expect(diffs.map((item) => [item.file, item.status, item.additions, item.deletions])).toEqual([
+        ["a-small.txt", "added", 1, 0],
+        ["b-large.txt", "added", lines, 0],
+        ["c-binary.bin", "added", 0, 0],
+      ])
+      expect(diffs[0]?.patch).toContain("+small\n")
+      expect(diffs[1]?.patch).toBe(VcsPatch.emptyPatch("b-large.txt"))
+      expect(diffs[2]?.patch).toBe("")
+      expect(yield* git.tree.diff({ repository, from: before, to: after, paths: [] })).toEqual([])
     }),
   )
 
