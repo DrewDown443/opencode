@@ -3242,6 +3242,229 @@
         "summary": "Get session context"
       }
     },
+    "/api/session/{sessionID}/turn": {
+      "get": {
+        "tags": ["session"],
+        "operationId": "v2.session.turns",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Session.Turn"
+                      }
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "List the session's turns in chronological order. A turn spans one busy period, from prompt promotion until the session goes idle, and includes steers delivered while busy. Forked sessions inherit the turns of their copied history.",
+        "summary": "List session turns"
+      }
+    },
+    "/api/session/{sessionID}/diff": {
+      "get": {
+        "tags": ["session"],
+        "operationId": "v2.session.diff",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "First turn ordinal of the range. Defaults to the first turn when `to` is set, or to the last turn when both are omitted."
+            },
+            "required": false
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Last turn ordinal of the range. Defaults to the last turn."
+            },
+            "required": false
+          },
+          {
+            "name": "context",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Unchanged lines around each hunk. Omit for full-file patches."
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FileDiff.Info"
+                      }
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Structured per-file diffs of the files changed across a contiguous range of turns, comparing the range's first recorded snapshot with its last. A range whose last step is still running compares against the working copy. Ranges that span a location change are rejected.",
+        "summary": "Diff session turns"
+      }
+    },
     "/api/session/{sessionID}/inbox": {
       "get": {
         "tags": ["session"],
@@ -12986,7 +13209,7 @@
             "name": "mode",
             "in": "query",
             "schema": {
-              "$ref": "#/components/schemas/Vcs.DiffSource"
+              "$ref": "#/components/schemas/Vcs.Mode"
             },
             "required": true
           },
@@ -12995,15 +13218,6 @@
             "in": "query",
             "schema": {
               "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "sessionID",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "pattern": "^ses"
             },
             "required": false
           },
@@ -13068,16 +13282,6 @@
               }
             }
           },
-          "404": {
-            "description": "SessionNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
-                }
-              }
-            }
-          },
           "503": {
             "description": "ServiceUnavailableError",
             "content": {
@@ -13089,7 +13293,7 @@
             }
           }
         },
-        "description": "Diff HEAD to the working copy (working), the base merge-base to the working copy (branch), the base merge-base to HEAD (committed), or the files changed by a session's last turn (turn, which requires sessionID and diffs the turn's first step snapshot against its last completed step or the working copy while it runs). Omitting base preserves repository-default comparison; supplying it overrides the comparison without saving it.",
+        "description": "Diff HEAD to the working copy (working), the base merge-base to the working copy (branch), or the base merge-base to HEAD (committed). Omitting base preserves repository-default comparison; supplying it overrides the comparison without saving it.",
         "summary": "VCS diff"
       }
     },
@@ -18956,6 +19160,61 @@
         "required": ["type", "message"],
         "additionalProperties": false
       },
+      "Session.Turn": {
+        "type": "object",
+        "properties": {
+          "ordinal": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "status": {
+            "$ref": "#/components/schemas/Session.Turn.Status"
+          },
+          "time": {
+            "type": "object",
+            "properties": {
+              "started": {
+                "type": "number"
+              },
+              "ended": {
+                "type": "number"
+              }
+            },
+            "required": ["started"],
+            "additionalProperties": false
+          },
+          "messages": {
+            "type": "object",
+            "properties": {
+              "first": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "last": {
+                "type": "string",
+                "pattern": "^msg_"
+              }
+            },
+            "required": ["first", "last"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/Location.Ref"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["ordinal", "status", "time", "messages", "location", "files"],
+        "additionalProperties": false
+      },
+      "Session.Turn.Status": {
+        "type": "string",
+        "enum": ["running", "succeeded", "failed", "interrupted"]
+      },
       "SessionActive": {
         "type": "object",
         "properties": {
@@ -19609,10 +19868,6 @@
           "type": "string"
         }
       },
-      "Vcs.DiffSource": {
-        "type": "string",
-        "enum": ["working", "branch", "committed", "turn"]
-      },
       "Vcs.FileStatus": {
         "type": "object",
         "properties": {
@@ -19644,6 +19899,10 @@
         },
         "required": ["branch"],
         "additionalProperties": false
+      },
+      "Vcs.Mode": {
+        "type": "string",
+        "enum": ["working", "branch", "committed"]
       },
       "WebSearch.Provider": {
         "type": "object",

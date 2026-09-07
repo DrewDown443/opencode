@@ -14,7 +14,7 @@ import { SessionMessageUpdater } from "./message-updater.js"
 import { SessionInbox } from "./inbox.js"
 import { Workspace } from "@opencode-ai/schema/workspace"
 import { InstructionState } from "./instruction-state.js"
-import { SessionInboxTable, SessionMessageTable, SessionTable } from "./sql.js"
+import { SessionInboxTable, SessionMessageTable, SessionTable, SessionTurnTable } from "./sql.js"
 import { InstructionEntry } from "./instruction-entry.js"
 import { Slug } from "../util/slug.js"
 import { FSUtil } from "@opencode-ai/util/fs-util"
@@ -219,10 +219,44 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
 
     cursor = rows.at(-1)!.seq
   }
-  if (copiedSeq !== undefined) yield* Bus.reserveSequence(db, event.data.sessionID, copiedSeq)
+  if (copiedSeq !== undefined) {
+    yield* projectForkTurns(db, event, copiedSeq)
+    yield* Bus.reserveSequence(db, event.data.sessionID, copiedSeq)
+  }
   if (event.data.instructions)
     yield* InstructionState.initialize(db, event.data.sessionID, event.durable.seq, event.data.instructions)
 })
+
+/**
+ * Copy the parent's turns over the copied prefix. The fork's own events start after
+ * `copiedSeq`, so a turn still open or ending later is cut at the boundary; an open
+ * one becomes interrupted because, from the fork's history, it ended at the fork.
+ */
+function projectForkTurns(db: DatabaseService, event: typeof SessionEvent.Forked.Type, copiedSeq: number) {
+  return Effect.gen(function* () {
+    const turns = yield* db
+      .select()
+      .from(SessionTurnTable)
+      .where(and(eq(SessionTurnTable.session_id, event.data.parentID), lt(SessionTurnTable.start_seq, copiedSeq)))
+      .all()
+      .pipe(Effect.orDie)
+    if (turns.length === 0) return
+    yield* db
+      .insert(SessionTurnTable)
+      .values(
+        turns.map((turn) => ({
+          session_id: event.data.sessionID,
+          start_seq: turn.start_seq,
+          end_seq: Math.min(turn.end_seq ?? Infinity, copiedSeq + 1),
+          status: turn.end_seq === null ? "interrupted" : turn.status,
+          time_started: turn.time_started,
+          time_ended: turn.end_seq === null ? event.created : turn.time_ended,
+        })),
+      )
+      .run()
+      .pipe(Effect.orDie)
+  })
+}
 
 function run(db: DatabaseService, event: MessageEvent) {
   return Effect.gen(function* () {
@@ -425,6 +459,35 @@ function projectIdle(
         time_updated: sql`${SessionTable.time_updated}`,
       })
       .where(eq(SessionTable.id, event.data.sessionID))
+      .run()
+      .pipe(Effect.orDie)
+    yield* db
+      .update(SessionTurnTable)
+      .set({ end_seq: event.durable.seq, status: outcome, time_ended: time })
+      .where(and(eq(SessionTurnTable.session_id, event.data.sessionID), isNull(SessionTurnTable.end_seq)))
+      .run()
+      .pipe(Effect.orDie)
+  })
+}
+
+/** A start while a turn is open resumes it after a shutdown instead of beginning another. */
+function projectStarted(db: DatabaseService, event: typeof SessionEvent.Execution.Started.Type) {
+  return Effect.gen(function* () {
+    const open = yield* db
+      .select({ start_seq: SessionTurnTable.start_seq })
+      .from(SessionTurnTable)
+      .where(and(eq(SessionTurnTable.session_id, event.data.sessionID), isNull(SessionTurnTable.end_seq)))
+      .get()
+      .pipe(Effect.orDie)
+    if (open) return
+    yield* db
+      .insert(SessionTurnTable)
+      .values({
+        session_id: event.data.sessionID,
+        start_seq: event.durable.seq,
+        status: "running",
+        time_started: event.created,
+      })
       .run()
       .pipe(Effect.orDie)
   })
@@ -650,6 +713,7 @@ const layer = Layer.effectDiscard(
         delivery: event.data.delivery,
       }),
     )
+    yield* bus.project(SessionEvent.Execution.Started, (event) => projectStarted(db, event))
     yield* bus.project(SessionEvent.Execution.Succeeded, (event) => projectIdle(db, event))
     yield* bus.project(SessionEvent.Execution.Failed, (event) => projectIdle(db, event))
     yield* bus.project(SessionEvent.Execution.Interrupted, (event) => projectIdle(db, event))
@@ -743,6 +807,22 @@ const layer = Layer.effectDiscard(
               eq(SessionInboxTable.session_id, event.data.sessionID),
               gte(SessionInboxTable.enqueued_seq, boundary.seq),
             ),
+          )
+          .run()
+          .pipe(Effect.orDie)
+        // Turns after the boundary lose their messages and disappear; a straddling turn ends at the boundary.
+        yield* db
+          .delete(SessionTurnTable)
+          .where(
+            and(eq(SessionTurnTable.session_id, event.data.sessionID), gte(SessionTurnTable.start_seq, boundary.seq)),
+          )
+          .run()
+          .pipe(Effect.orDie)
+        yield* db
+          .update(SessionTurnTable)
+          .set({ end_seq: boundary.seq })
+          .where(
+            and(eq(SessionTurnTable.session_id, event.data.sessionID), gte(SessionTurnTable.end_seq, boundary.seq)),
           )
           .run()
           .pipe(Effect.orDie)

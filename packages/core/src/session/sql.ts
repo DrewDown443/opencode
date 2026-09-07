@@ -144,6 +144,26 @@ export const SessionInboxTable = sqliteTable(
   ],
 )
 
+/**
+ * One row per busy period, projected from the execution lifecycle events. Messages with
+ * `start_seq < seq < end_seq` belong to the turn; `end_seq` stays null while it runs.
+ */
+export const SessionTurnTable = sqliteTable(
+  "session_turn",
+  {
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    start_seq: integer().notNull(),
+    end_seq: integer(),
+    status: text().$type<Session.Turn["status"]>().notNull(),
+    time_started: integer().notNull(),
+    time_ended: integer(),
+  },
+  (table) => [primaryKey({ columns: [table.session_id, table.start_seq] })],
+)
+
 export const InstructionEntryTable = sqliteTable(
   "instruction_entry",
   {

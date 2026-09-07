@@ -21,12 +21,3 @@ test("review modes preserve shipped working and combined branch names", () => {
   }
   expect(() => Schema.decodeUnknownSync(Vcs.Mode)("unknown")).toThrow()
 })
-
-test("diff sources extend VCS modes with the session turn without widening backend modes", () => {
-  expect(Vcs.DiffSource.ast.annotations?.identifier).toBe("Vcs.DiffSource")
-  for (const source of ["working", "branch", "committed", "turn"] as const) {
-    expect(Schema.decodeUnknownSync(Vcs.DiffSource)(source)).toBe(source)
-  }
-  expect(() => Schema.decodeUnknownSync(Vcs.DiffSource)("unknown")).toThrow()
-  expect(() => Schema.decodeUnknownSync(Vcs.Mode)("turn")).toThrow()
-})

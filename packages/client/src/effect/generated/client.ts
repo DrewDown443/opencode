@@ -68,6 +68,10 @@ import type {
   SessionRevertCommitOutput,
   SessionContextInput,
   SessionContextOutput,
+  SessionTurnsInput,
+  SessionTurnsOutput,
+  SessionDiffInput,
+  SessionDiffOutput,
   SessionInboxListInput,
   SessionInboxListOutput,
   SessionInboxCancelInput,
@@ -594,6 +598,25 @@ const EndpointSessionContext = (raw: RawClient["server.session"]) => (input: Ses
     ),
   )
 
+const EndpointSessionTurns = (raw: RawClient["server.session"]) => (input: SessionTurnsInput) =>
+  preserveEffect<SessionTurnsOutput>()(
+    raw["session.turns"]({ params: { sessionID: input["sessionID"] } }).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((value) => value.data),
+    ),
+  )
+
+const EndpointSessionDiff = (raw: RawClient["server.session"]) => (input: SessionDiffInput) =>
+  preserveEffect<SessionDiffOutput>()(
+    raw["session.diff"]({
+      params: { sessionID: input["sessionID"] },
+      query: { from: input["from"], to: input["to"], context: input["context"] },
+    }).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((value) => value.data),
+    ),
+  )
+
 const EndpointSessionInboxList = (raw: RawClient["server.session"]) => (input: SessionInboxListInput) =>
   preserveEffect<SessionInboxListOutput>()(
     raw["session.inbox.list"]({ params: { sessionID: input["sessionID"] } }).pipe(
@@ -744,6 +767,8 @@ const adaptGroupSession = (raw: RawClient["server.session"]) => ({
     commit: EndpointSessionRevertCommit(raw),
   },
   context: EndpointSessionContext(raw),
+  turns: EndpointSessionTurns(raw),
+  diff: EndpointSessionDiff(raw),
   inbox: {
     list: EndpointSessionInboxList(raw),
     cancel: EndpointSessionInboxCancel(raw),
@@ -1533,13 +1558,7 @@ const EndpointVcsBranches = (raw: RawClient["server.vcs"]) => (input?: VcsBranch
 const EndpointVcsDiff = (raw: RawClient["server.vcs"]) => (input: VcsDiffInput) =>
   preserveEffect<VcsDiffOutput>()(
     raw["vcs.diff"]({
-      query: {
-        location: input["location"],
-        mode: input["mode"],
-        base: input["base"],
-        sessionID: input["sessionID"],
-        context: input["context"],
-      },
+      query: { location: input["location"], mode: input["mode"], base: input["base"], context: input["context"] },
     }).pipe(Effect.mapError(mapClientError)),
   )
 

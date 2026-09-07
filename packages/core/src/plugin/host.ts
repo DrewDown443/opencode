@@ -449,11 +449,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
       base: () => response(vcs.base()),
       branches: (input) => response(vcs.branches({ search: input?.search, limit: input?.limit })),
       status: () => response(vcs.status()),
-      diff: (input) => {
-        if (input.mode !== "turn") return response(vcs.diff(input.mode, { context: input.context, base: input.base }))
-        if (!input.sessionID) return Effect.fail(new Error("The turn diff source requires a sessionID"))
-        return response(sessions.turnDiff({ sessionID: input.sessionID, context: input.context }))
-      },
+      diff: (input) => response(vcs.diff(input.mode, { context: input.context, base: input.base })),
       transform: vcs.transform,
       reload: vcs.reload,
     },

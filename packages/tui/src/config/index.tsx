@@ -109,9 +109,8 @@ export const Info = Schema.Struct({
   ).annotate({ description: "System notification and sound settings" }),
   diffs: Schema.optional(
     Schema.Struct({
-      source: Schema.optional(Vcs.DiffSource).annotate({
-        description:
-          "Initial diff source; defaults to 'branch' (branch and uncommitted changes). 'turn' shows the last session turn and falls back to 'branch' outside a session",
+      source: Schema.optional(Vcs.Mode).annotate({
+        description: "Initial diff source; defaults to 'branch' (branch and uncommitted changes)",
       }),
       wrap: Schema.optional(Schema.Literals(["word", "none"])).annotate({
         description: "Line wrapping behavior in diff output",

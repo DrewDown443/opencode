@@ -146,6 +146,8 @@ export type SessionInboxSyntheticPayload = { text: string; description?: string;
 
 export type SessionInboxCompactionPayload = {}
 
+export type SessionTurnStatus = "running" | "succeeded" | "failed" | "interrupted"
+
 export type InstructionEntryKey = string
 
 export type SessionGenerateResponse = { data: { text: string } }
@@ -555,6 +557,15 @@ export type SessionInboxCompaction = {
   type: "compaction"
   payload: SessionInboxCompactionPayload
   delivery: SessionInboxDelivery
+}
+
+export type SessionTurn = {
+  ordinal: number
+  status: SessionTurnStatus
+  time: { started: number; ended?: number }
+  messages: { first: string; last: string }
+  location: LocationRef
+  files: Array<string>
 }
 
 export type InstructionEntryInfo = { key: InstructionEntryKey; value: JsonValue }
@@ -4138,6 +4149,31 @@ export type SessionContextInput = { readonly sessionID: { readonly sessionID: st
 
 export type SessionContextOutput = { data: Array<SessionMessageInfo> }["data"]
 
+export type SessionTurnsInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionTurnsOutput = { data: Array<SessionTurn> }["data"]
+
+export type SessionDiffInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly from?: {
+    readonly from?: number | undefined
+    readonly to?: number | undefined
+    readonly context?: number | undefined
+  }["from"]
+  readonly to?: {
+    readonly from?: number | undefined
+    readonly to?: number | undefined
+    readonly context?: number | undefined
+  }["to"]
+  readonly context?: {
+    readonly from?: number | undefined
+    readonly to?: number | undefined
+    readonly context?: number | undefined
+  }["context"]
+}
+
+export type SessionDiffOutput = { data: Array<FileDiffInfo> }["data"]
+
 export type SessionInboxListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionInboxListOutput = { data: Array<SessionInboxInfo> }["data"]
@@ -6228,37 +6264,26 @@ export type VcsBranchesOutput = {
 export type VcsDiffInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly mode: "working" | "branch" | "committed" | "turn"
+    readonly mode: "working" | "branch" | "committed"
     readonly base?: string | undefined
-    readonly sessionID?: string | undefined
     readonly context?: number | undefined
   }["location"]
   readonly mode: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly mode: "working" | "branch" | "committed" | "turn"
+    readonly mode: "working" | "branch" | "committed"
     readonly base?: string | undefined
-    readonly sessionID?: string | undefined
     readonly context?: number | undefined
   }["mode"]
   readonly base?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly mode: "working" | "branch" | "committed" | "turn"
+    readonly mode: "working" | "branch" | "committed"
     readonly base?: string | undefined
-    readonly sessionID?: string | undefined
     readonly context?: number | undefined
   }["base"]
-  readonly sessionID?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly mode: "working" | "branch" | "committed" | "turn"
-    readonly base?: string | undefined
-    readonly sessionID?: string | undefined
-    readonly context?: number | undefined
-  }["sessionID"]
   readonly context?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly mode: "working" | "branch" | "committed" | "turn"
+    readonly mode: "working" | "branch" | "committed"
     readonly base?: string | undefined
-    readonly sessionID?: string | undefined
     readonly context?: number | undefined
   }["context"]
 }

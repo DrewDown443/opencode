@@ -62,6 +62,10 @@ import type {
   SessionRevertCommitOutput,
   SessionContextInput,
   SessionContextOutput,
+  SessionTurnsInput,
+  SessionTurnsOutput,
+  SessionDiffInput,
+  SessionDiffOutput,
   SessionInboxListInput,
   SessionInboxListOutput,
   SessionInboxCancelInput,
@@ -838,6 +842,29 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/context`,
+            successStatus: 200,
+            declaredStatuses: [400, 401, 404, 500],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      turns: (input: SessionTurnsInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionTurnsOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/turn`,
+            successStatus: 200,
+            declaredStatuses: [400, 401, 404],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      diff: (input: SessionDiffInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionDiffOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/diff`,
+            query: { from: input["from"], to: input["to"], context: input["context"] },
             successStatus: 200,
             declaredStatuses: [400, 401, 404, 500],
             empty: false,
@@ -2112,15 +2139,9 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/vcs/diff`,
-            query: {
-              location: input["location"],
-              mode: input["mode"],
-              base: input["base"],
-              sessionID: input["sessionID"],
-              context: input["context"],
-            },
+            query: { location: input["location"], mode: input["mode"], base: input["base"], context: input["context"] },
             successStatus: 200,
-            declaredStatuses: [400, 401, 404, 503],
+            declaredStatuses: [400, 401, 503],
             empty: false,
           },
           requestOptions,

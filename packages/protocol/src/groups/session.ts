@@ -30,6 +30,7 @@ import { Model } from "@opencode-ai/schema/model"
 import { Location } from "@opencode-ai/schema/location"
 import { SessionEvent } from "@opencode-ai/schema/session-event"
 import { EventLog } from "@opencode-ai/schema/event-log"
+import { FileDiff } from "@opencode-ai/schema/file-diff"
 
 const ParentIDFilter = Schema.Union([
   Session.ID,
@@ -520,6 +521,50 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           description: "Retrieve the active context messages for a session (all messages after the last compaction).",
         }),
       ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.turns", "/api/session/:sessionID/turn", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({ data: Schema.Array(Session.Turn) }),
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.turns",
+            summary: "List session turns",
+            description:
+              "List the session's turns in chronological order. A turn spans one busy period, from prompt promotion until the session goes idle, and includes steers delivered while busy. Forked sessions inherit the turns of their copied history.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.diff", "/api/session/:sessionID/diff", {
+        params: { sessionID: Session.ID },
+        query: Schema.Struct({
+          from: Schema.NumberFromString.pipe(Schema.decodeTo(PositiveInt), Schema.optional).annotate({
+            description:
+              "First turn ordinal of the range. Defaults to the first turn when `to` is set, or to the last turn when both are omitted.",
+          }),
+          to: Schema.NumberFromString.pipe(Schema.decodeTo(PositiveInt), Schema.optional).annotate({
+            description: "Last turn ordinal of the range. Defaults to the last turn.",
+          }),
+          context: Schema.NumberFromString.pipe(Schema.decodeTo(NonNegativeInt), Schema.optional).annotate({
+            description: "Unchanged lines around each hunk. Omit for full-file patches.",
+          }),
+        }),
+        success: Schema.Struct({ data: Schema.Array(FileDiff.Info) }),
+        error: [InvalidRequestError, SessionNotFoundError, UnknownError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.diff",
+            summary: "Diff session turns",
+            description:
+              "Structured per-file diffs of the files changed across a contiguous range of turns, comparing the range's first recorded snapshot with its last. A range whose last step is still running compares against the working copy. Ranges that span a location change are rejected.",
+          }),
+        ),
     )
     .add(
       HttpApiEndpoint.get("session.inbox.list", "/api/session/:sessionID/inbox", {

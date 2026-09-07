@@ -77,44 +77,6 @@ it.live(
   20_000,
 )
 
-it.live(
-  "serves the turn diff source through the session's snapshots",
-  () =>
-    Effect.gen(function* () {
-      const tmp = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir("opencode-vcs-turn-")))
-      yield* Effect.promise(async () => {
-        await $`git init -b main`.cwd(tmp.path).quiet()
-        await Bun.write(path.join(tmp.path, "file.txt"), "base\n")
-      })
-      const server = yield* startServer(path.join(tmp.path, "config"))
-      const url = new URL("/api/vcs/diff", server.base)
-      url.searchParams.set("location[directory]", tmp.path)
-      url.searchParams.set("mode", "turn")
-      const missing = yield* Effect.promise(() => fetch(url, { headers: server.headers }))
-      expect(missing.status).toBe(400)
-      expect(yield* Effect.promise(() => missing.json())).toMatchObject({
-        _tag: "InvalidRequestError",
-        field: "sessionID",
-      })
-      url.searchParams.set("sessionID", "ses_0000000000000000000000unknown")
-      const unknown = yield* Effect.promise(() => fetch(url, { headers: server.headers }))
-      expect(unknown.status).toBe(404)
-      expect(yield* Effect.promise(() => unknown.json())).toMatchObject({ _tag: "SessionNotFoundError" })
-      const created = yield* Effect.promise(() =>
-        fetch(new URL("/api/session", server.base), {
-          method: "POST",
-          headers: { ...server.headers, "content-type": "application/json" },
-          body: JSON.stringify({ location: { directory: tmp.path } }),
-        }).then((response) => response.json() as Promise<{ data: { id: string } }>),
-      )
-      url.searchParams.set("sessionID", created.data.id)
-      const empty = yield* Effect.promise(() => fetch(url, { headers: server.headers }))
-      expect(empty.status).toBe(200)
-      expect(yield* Effect.promise(() => empty.json())).toMatchObject({ data: [] })
-    }),
-  20_000,
-)
-
 it.live("maps a failing base provider to HTTP 503 instead of null metadata", () =>
   Effect.gen(function* () {
     const tmp = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir("opencode-vcs-failure-")))
