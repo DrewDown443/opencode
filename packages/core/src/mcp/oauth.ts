@@ -96,7 +96,7 @@ export interface Options {
   readonly clientMetadataUrl?: string
   /** Pre-fetched authorization server discovery so the SDK does not repeat it. */
   readonly discovery?: OAuthServerInfo
-  /** Receives the authorization server the SDK discovered for this connection, before it refreshes or authorizes. */
+  /** Receives the SDK's discovery result before it refreshes or authorizes. */
   readonly onDiscovery?: (discovery: OAuthDiscoveryState) => void | Promise<void>
   /** Invoked by the SDK to drop credentials it has determined are invalid (e.g. a rejected refresh token). */
   readonly invalidate?: (scope: "all" | "client" | "tokens" | "verifier" | "discovery") => void | Promise<void>
@@ -173,7 +173,7 @@ export const memoryStore = (): Store => {
 export const clientFromCredential = (credential: Credential.OAuth) =>
   credential.metadata?.client as OAuthClientInformationMixed | undefined
 
-/** Reads the authorization server issuer recorded when the credential was obtained, if any. */
+/** Reads the authorization server issuer recorded when the credential was obtained. */
 export const issuerFromCredential = (credential: Credential.OAuth) => {
   const issuer = credential.metadata?.issuer
   return typeof issuer === "string" ? issuer : undefined
@@ -204,22 +204,18 @@ export const toCredential = (input: {
   })
 
 /**
- * Reconstructs SDK tokens from a stored credential so the connect-time provider can present them.
- *
- * A refresh token must only go back to the authorization server that issued it. When `issuer` names the server
- * discovery currently points at and it differs from the one recorded at login, the refresh token is withheld:
- * the SDK then re-authorizes instead of handing the token to a server that never issued it. The access token is
- * still returned so an unexpired session keeps working. A CIMD client_id is valid at any authorization server,
- * so a changed issuer is the only signal that the MCP server's auth has moved.
+ * Reconstructs SDK tokens from a stored credential so the connect-time provider can present them. The refresh
+ * token is withheld when `issuer` differs from the one recorded at login, so the SDK re-authorizes instead of
+ * sending it to an authorization server that did not issue it.
  */
 export const toTokens = (credential: Credential.OAuth, issuer?: string): OAuthTokens => {
   const metadata = credential.metadata ?? {}
   const bound = issuerFromCredential(credential)
-  const moved = bound !== undefined && issuer !== undefined && bound !== issuer
+  const refresh = credential.refresh && (!bound || !issuer || bound === issuer)
   return {
     access_token: credential.access,
     token_type: typeof metadata.tokenType === "string" ? metadata.tokenType : "Bearer",
-    ...(credential.refresh && !moved ? { refresh_token: credential.refresh } : {}),
+    ...(refresh ? { refresh_token: credential.refresh } : {}),
     ...(credential.expires ? { expires_in: Math.max(0, Math.floor((credential.expires - Date.now()) / 1000)) } : {}),
     ...(typeof metadata.scope === "string" ? { scope: metadata.scope } : {}),
   }
