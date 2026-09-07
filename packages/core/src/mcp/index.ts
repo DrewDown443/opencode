@@ -292,12 +292,18 @@ export const layer = (options?: Options) =>
         // Tracks the refresh token this provider last presented, so invalidate can tell whether the SDK
         // rejected the currently-stored credential or a snapshot another connection has already rotated past.
         let presented = found.value.refresh
+        // Authorization server the SDK discovered for this connection; compared against the issuer recorded at
+        // login before a refresh token is presented.
+        let issuer: string | undefined
         const readOAuthCredential = async () => {
           const stored = await run(credentials.get(credentialID))
           return stored?.value.type === "oauth" ? stored.value : undefined
         }
         return McpOAuth.provider({
           ...base,
+          onDiscovery: (discovery) => {
+            issuer = discovery.authorizationServerMetadata?.issuer
+          },
           // Drop a credential the SDK rejected so the next connect cleanly reports needs_auth — but only if it is
           // still the stored one. Rotating servers hand out a fresh refresh token per use, so a concurrent
           // connection may have already replaced ours; deleting then would discard the newer valid credential and
@@ -332,7 +338,17 @@ export const layer = (options?: Options) =>
               const oauth = await readOAuthCredential()
               if (!oauth) return undefined
               presented = oauth.refresh
-              return McpOAuth.toTokens(oauth)
+              const tokens = McpOAuth.toTokens(oauth, issuer)
+              if (oauth.refresh && !tokens.refresh_token)
+                await run(
+                  Effect.logWarning("mcp oauth refresh withheld", {
+                    ...fields,
+                    reason: "issuer_changed",
+                    expected: McpOAuth.issuerFromCredential(oauth),
+                    actual: issuer,
+                  }),
+                )
+              return tokens
             },
             saveTokens: async (tokens) => {
               const previous = await readOAuthCredential()
@@ -341,6 +357,8 @@ export const layer = (options?: Options) =>
                 serverUrl: remote.url,
                 tokens,
                 client: previous ? McpOAuth.clientFromCredential(previous) : undefined,
+                // Keep the issuer bound at login; credentials from before issuer tracking adopt the current one.
+                issuer: (previous ? McpOAuth.issuerFromCredential(previous) : undefined) ?? issuer,
               })
               presented = value.refresh
               await run(
