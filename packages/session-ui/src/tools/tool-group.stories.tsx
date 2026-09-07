@@ -4,6 +4,8 @@ import { createTwoFilesPatch } from "diff"
 import { CurrentSessionProviders } from "../storybook/current-session-story"
 import { storyDocument, storyTool } from "../storybook/current-session-scenarios"
 import { type ContextGroupPart, CurrentContextToolGroup } from "./tool-renderer"
+import { SessionTimeline } from "../timeline/session-timeline"
+import { timelinePresets } from "../timeline/detail"
 
 export default {
   title: "OpenCode/Work/Tool group",
@@ -78,36 +80,59 @@ export const MixedReasoning = {
 }
 
 export const PatchFollowUps = {
-  args: { separator: "none" },
-  argTypes: { separator: { control: "select", options: ["none", "shell", "error", "reasoning"] } },
-  render: (args: { separator: string }) => {
+  args: { separator: "none", tool: "patch", placement: "used" },
+  argTypes: {
+    separator: { control: "select", options: ["none", "shell", "error", "reasoning"] },
+    tool: { control: "select", options: ["patch", "edit", "write", "mixed"] },
+    placement: { control: "select", options: ["used", "separate", "grouped"] },
+  },
+  render: (args: { separator: string; tool: string; placement: "used" | "separate" | "grouped" }) => {
     const [state, setState] = createStore({ phase: "initial", open: true, reasoning: true })
+    const source = (value: number) => `export const value = ${value}\n`
     const file = (path: string, before: number, after: number) => ({
       file: path,
       status: "modified",
       additions: 1,
       deletions: 1,
-      patch: createTwoFilesPatch(
-        path,
-        path,
-        `export const value = ${before}\n`,
-        `export const value = ${after}\n`,
-        "",
-        "",
-        { context: Infinity },
-      ),
+      patch: createTwoFilesPatch(path, path, source(before), source(after)),
     })
+    const changes = (next: boolean) => {
+      const files = next
+        ? [file("src/a.ts", 1, 2), file("src/c.ts", 0, 1)]
+        : [file("src/a.ts", 0, 1), file("src/b.ts", 0, 1)]
+      const status = next && state.phase === "running" ? "running" : "completed"
+      if (args.tool === "patch")
+        return [
+          storyTool(
+            next ? "patch_next" : "patch_first",
+            "patch",
+            status,
+            {},
+            { metadata: status === "running" ? {} : { files } },
+          ),
+        ]
+      return files.map((file, index) => {
+        const name = args.tool === "mixed" ? (next ? ["patch", "write"] : ["edit", "write"])[index]! : args.tool
+        return storyTool(
+          `${next ? "next" : "first"}_${index}`,
+          name,
+          status,
+          name === "patch"
+            ? { patchText: `Update ${file.file}` }
+            : name === "write"
+              ? { path: file.file, content: source(next && index === 0 ? 2 : 1) }
+              : {
+                  path: file.file,
+                  oldString: source(next && index === 0 ? 1 : 0),
+                  newString: source(next && index === 0 ? 2 : 1),
+                },
+          { metadata: status === "running" ? {} : { files: [file] } },
+        )
+      })
+    }
     const parts = createMemo<ContextGroupPart[]>(() => [
       storyTool("patch_shell", "shell", "completed", { command: "printf checked" }, { output: "checked" }),
-      storyTool(
-        "patch_first",
-        "patch",
-        "completed",
-        {},
-        {
-          metadata: { files: [file("src/a.ts", 0, 1), file("src/b.ts", 0, 1)] },
-        },
-      ),
+      ...changes(false),
       ...(state.phase === "initial"
         ? []
         : [
@@ -115,7 +140,15 @@ export const PatchFollowUps = {
               ? [storyTool("patch_separator", "shell", "completed", { command: "printf checked" })]
               : []),
             ...(args.separator === "error"
-              ? [storyTool("patch_error", "patch", "error", {}, { error: "Patch failed" })]
+              ? [
+                  storyTool(
+                    "patch_error",
+                    args.tool === "mixed" ? "write" : args.tool,
+                    "error",
+                    {},
+                    { error: "File change failed" },
+                  ),
+                ]
               : []),
             ...(args.separator === "reasoning" && state.reasoning
               ? [
@@ -126,15 +159,7 @@ export const PatchFollowUps = {
                   },
                 ]
               : []),
-            storyTool(
-              "patch_next",
-              "patch",
-              state.phase === "running" ? "running" : "completed",
-              {},
-              {
-                metadata: state.phase === "running" ? {} : { files: [file("src/a.ts", 1, 2), file("src/c.ts", 0, 1)] },
-              },
-            ),
+            ...changes(true),
           ]),
     ])
     return (
@@ -153,12 +178,25 @@ export const PatchFollowUps = {
           </Show>
         </div>
         <CurrentSessionProviders document={storyDocument(parts())}>
-          <CurrentContextToolGroup
-            parts={parts()}
-            busy={state.phase === "running"}
-            open={state.open}
-            onOpenChange={(open) => setState("open", open)}
-          />
+          <Show
+            when={args.placement !== "used"}
+            fallback={
+              <CurrentContextToolGroup
+                parts={parts()}
+                busy={state.phase === "running"}
+                open={state.open}
+                onOpenChange={(open) => setState("open", open)}
+              />
+            }
+          >
+            <SessionTimeline
+              document={storyDocument(parts())}
+              timelineDetail={{
+                ...timelinePresets[2].value,
+                edit: { placement: args.placement === "separate" ? "separate" : "grouped", details: "collapsed" },
+              }}
+            />
+          </Show>
         </CurrentSessionProviders>
       </section>
     )
