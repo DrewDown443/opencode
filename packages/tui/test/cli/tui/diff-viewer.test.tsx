@@ -121,18 +121,20 @@ test("base lookup is lazy until the viewer opens", async () => {
   }
 })
 
-test.each([50, 160])("the source chooser selects all three scopes directly at %i columns", async (width) => {
+test.each([50, 160])("the source chooser selects all four scopes directly at %i columns", async (width) => {
   const files = {
     branch: ["committed.txt", "staged.txt", "unstaged.txt", "untracked.txt"],
     committed: ["committed.txt"],
     working: ["staged.txt", "unstaged.txt", "untracked.txt"],
+    turn: ["unstaged.txt"],
   }
   const viewer = await renderDiffViewer([], {
     width,
     height: 30,
     diffResponse: async (url) => {
       const mode = url.searchParams.get("mode")
-      if (mode !== "branch" && mode !== "committed" && mode !== "working") throw new Error("Unexpected diff mode")
+      if (mode !== "branch" && mode !== "committed" && mode !== "working" && mode !== "turn")
+        throw new Error("Unexpected diff mode")
       return json({
         location: session.location,
         data: files[mode].map((file) => ({
@@ -149,6 +151,7 @@ test.each([50, 160])("the source chooser selects all three scopes directly at %i
     for (const choice of [
       { mode: "committed", index: 1, label: "Committed", absent: "untracked.txt" },
       { mode: "working", index: 2, label: "Uncommitted", absent: "committed.txt" },
+      { mode: "turn", index: 3, label: "Last turn", absent: "committed.txt" },
       { mode: "branch", index: 0, label: "All", absent: "never-present.txt" },
     ] as const) {
       await chooseSource(viewer, choice.index)
@@ -158,11 +161,14 @@ test.each([50, 160])("the source chooser selects all three scopes directly at %i
       expect(frame).not.toContain(choice.absent)
       expect(viewer.vcsDiffInput()).toMatchObject({ mode: choice.mode })
       expect(viewer.diffRequests.at(-1)!.searchParams.get("base")).toBe(
-        choice.mode === "working" ? null : "refs/heads/v2",
+        choice.mode === "working" || choice.mode === "turn" ? null : "refs/heads/v2",
+      )
+      expect(viewer.diffRequests.at(-1)!.searchParams.get("sessionID")).toBe(
+        choice.mode === "turn" ? "session-1" : null,
       )
     }
     expect(viewer.baseRequests).toHaveLength(1)
-    expect(viewer.diffRequests).toHaveLength(4)
+    expect(viewer.diffRequests).toHaveLength(5)
     expect(viewer.writes).toHaveLength(0)
     expect(viewer.settings().diffs?.source).toBeUndefined()
   } finally {
@@ -209,6 +215,60 @@ test("explicit route source overrides the configured default", async () => {
   }
 })
 
+test("the turn source diffs the session without resolving a base", async () => {
+  const viewer = await renderDiffViewer(hunkDiff, { source: "turn", height: 30 })
+  try {
+    expect(viewer.vcsDiffInput()).toEqual({
+      location: { directory: "/repo/session" },
+      mode: "turn",
+      sessionID: "session-1",
+      context: "12",
+    })
+    expect(viewer.baseRequests).toHaveLength(0)
+    await viewer.app.waitForFrame((frame) => frame.includes("Last turn · since your last prompt"))
+    expect(viewer.app.captureCharFrame()).toContain("const first")
+    await chooseSource(viewer, 2)
+    await viewer.app.waitForFrame((frame) => frame.includes("Uncommitted · vs HEAD") && frame.includes("const first"))
+    expect(viewer.vcsDiffInput()).toEqual({
+      location: { directory: "/repo/session" },
+      mode: "working",
+      context: "12",
+    })
+    expect(viewer.baseRequests).toHaveLength(0)
+  } finally {
+    viewer.app.renderer.destroy()
+  }
+})
+
+test("a failing turn diff reports the error without suggesting a base", async () => {
+  const viewer = await renderDiffViewer([], { source: "turn", fail: true })
+  try {
+    await viewer.app.waitForFrame((frame) => frame.includes("Could not load diff. Reopen the diff viewer"))
+    expect(viewer.app.captureCharFrame()).toContain("Last turn · Diff unavailable")
+    expect(viewer.app.captureCharFrame()).not.toContain("Choose a base branch")
+  } finally {
+    viewer.app.renderer.destroy()
+  }
+})
+
+test("the turn source is unavailable outside a session and falls back to the branch scope", async () => {
+  const viewer = await renderDiffViewer(hunkDiff, { source: "turn", height: 30, initialRoute: { type: "home" } })
+  try {
+    expect(viewer.vcsDiffInput()).toEqual({
+      location: { directory: "/repo/default" },
+      mode: "branch",
+      base: "refs/heads/v2",
+      context: "12",
+    })
+    viewer.app.mockInput.pressKey("d")
+    await viewer.app.waitForFrame((frame) => frame.includes("Diff source"))
+    expect(viewer.app.captureCharFrame()).not.toContain("Last turn")
+    expect(viewer.app.captureCharFrame()).toMatch(/Base\s+v2/)
+  } finally {
+    viewer.app.renderer.destroy()
+  }
+})
+
 test.each([50, 80, 160])(
   "keeps scope, base, and review count on one row with a selectable base at %i columns",
   async (width) => {
@@ -240,9 +300,11 @@ test.each([50, 80, 160])(
       expect(rows[first]).toMatch(/All\s+Branch \+ local changes/)
       expect(rows[first + 1]).toMatch(/Committed\s+Branch commits only/)
       expect(rows[first + 2]).toMatch(/Uncommitted\s+Local changes only/)
-      expect(rows[first + 3]).toMatch(/Base\s+release/)
+      expect(rows[first + 3]).toMatch(/Last turn\s+Since your last prompt/)
+      expect(rows[first + 4]).toMatch(/Base\s+release/)
       expect(rows[first + 1].indexOf("Branch commits only")).toBe(rows[first].indexOf("Branch + local changes"))
       expect(rows[first + 2].indexOf("Local changes only")).toBe(rows[first].indexOf("Branch + local changes"))
+      expect(rows[first + 3].indexOf("Since your last prompt")).toBe(rows[first].indexOf("Branch + local changes"))
       viewer.app.mockInput.pressEscape()
       await viewer.app.waitForFrame((frame) => !frame.includes("Diff source"))
       viewer.commands.get("diff.mark_reviewed")!.run()
@@ -292,7 +354,7 @@ test.each([50, 80, 100, 160])(
 )
 
 test("opening the source chooser from initial Uncommitted does not resolve a branch base", async () => {
-  const viewer = await renderDiffViewer(hunkDiff, { source: "working" })
+  const viewer = await renderDiffViewer(hunkDiff, { source: "working", height: 30 })
   try {
     viewer.app.mockInput.pressKey("d")
     await viewer.app.waitForFrame((frame) => frame.includes("Diff source"))
@@ -313,7 +375,7 @@ test.each(["branch", "committed", "working"] as const)(
       viewer.commands.get("diff.mark_reviewed")!.run()
       await viewer.app.flush()
       expect(viewer.app.captureCharFrame()).toContain("1/1")
-      await chooseSource(viewer, 3)
+      await chooseSource(viewer, 4)
       await viewer.app.waitForFrame((frame) => frame.includes("Base branch") && frame.includes("origin/release"))
       expect(viewer.app.captureCharFrame()).toMatch(/●\s+v2/)
       expect(viewer.branchesRequests[0].searchParams.get("location[directory]")).toBe("/repo/session")
@@ -347,7 +409,7 @@ test.each(["branch", "committed", "working"] as const)(
       expect(viewer.app.captureCharFrame()).toContain("0/1")
       expect(viewer.diffRequests).toHaveLength(source === "working" ? 2 : 3)
       if (source !== "working") expect(viewer.vcsDiffInput()).toMatchObject({ base: "origin/release" })
-      await chooseSource(viewer, 3)
+      await chooseSource(viewer, 4)
       await viewer.app.waitForFrame((frame) => /●\s+origin\/release/.test(frame))
       expect(viewer.baseRequests).toHaveLength(1)
     } finally {
@@ -371,7 +433,7 @@ test.each(["branch", "committed"] as const)("an ambiguous base never requests a 
     expect(viewer.app.captureCharFrame()).toContain("Choose a base branch")
     expect(viewer.app.captureCharFrame()).not.toContain("No changes to show")
     expect(viewer.diffRequests).toHaveLength(0)
-    await chooseSource(viewer, 3)
+    await chooseSource(viewer, 4)
     await viewer.app.waitForFrame((frame) => frame.includes("Base branch") && frame.includes("origin/release"))
     viewer.app.mockInput.pressKey("HOME")
     viewer.app.mockInput.pressArrow("down")
@@ -388,7 +450,7 @@ test.each(["branch", "committed"] as const)("an ambiguous base never requests a 
 test("base and scope choices survive reopening but not a new TUI instance", async () => {
   const viewer = await renderDiffViewer(hunkDiff, { source: "working", height: 30, kittyKeyboard: true })
   try {
-    await chooseSource(viewer, 3)
+    await chooseSource(viewer, 4)
     await viewer.app.waitForFrame((frame) => frame.includes("origin/release"))
     viewer.app.mockInput.pressArrow("down")
     viewer.app.mockInput.pressEnter()
@@ -421,7 +483,7 @@ test("base and scope choices survive reopening but not a new TUI instance", asyn
 test("base choices are isolated by branch within the same location", async () => {
   const viewer = await renderDiffViewer(hunkDiff, { height: 30, kittyKeyboard: true })
   try {
-    await chooseSource(viewer, 3)
+    await chooseSource(viewer, 4)
     await viewer.app.waitForFrame((frame) => frame.includes("origin/release"))
     viewer.app.mockInput.pressArrow("down")
     viewer.app.mockInput.pressEnter()
@@ -449,13 +511,13 @@ test("an invalid comparison reports an error and allows another base choice", as
         : json({ location: session.location, data: hunkDiff }),
   })
   try {
-    await chooseSource(viewer, 3)
+    await chooseSource(viewer, 4)
     await viewer.app.waitForFrame((frame) => frame.includes("origin/release"))
     viewer.app.mockInput.pressArrow("down")
     viewer.app.mockInput.pressEnter()
     await viewer.app.waitForFrame((frame) => frame.includes("Base or diff unavailable"))
     expect(viewer.app.captureCharFrame()).not.toContain("No changes to show")
-    await chooseSource(viewer, 3)
+    await chooseSource(viewer, 4)
     await viewer.app.waitForFrame((frame) => frame.includes("origin/release"))
     viewer.app.mockInput.pressKey("HOME")
     viewer.app.mockInput.pressEnter()
@@ -474,7 +536,7 @@ test("base search failures are visible without changing the diff", async () => {
     branchesResponse: async () => json({ message: "branches unavailable" }, { status: 503 }),
   })
   try {
-    await chooseSource(viewer, 3)
+    await chooseSource(viewer, 4)
     await viewer.app.waitForFrame((frame) => frame.includes("Could not load branches"))
     expect(viewer.app.captureCharFrame()).toContain("All · vs v2")
     expect(viewer.mutationRequests).toHaveLength(0)
@@ -493,7 +555,7 @@ test("a late base lookup cannot overwrite an in-memory base choice", async () =>
     baseResponse: () => pending.promise,
   })
   try {
-    await chooseSource(viewer, 3)
+    await chooseSource(viewer, 4)
     await viewer.app.waitForFrame((frame) => frame.includes("origin/release"))
     viewer.app.mockInput.pressArrow("down")
     viewer.app.mockInput.pressEnter()
@@ -522,7 +584,7 @@ test("dismissing the base picker leaves the comparison unchanged", async () => {
     kittyKeyboard: true,
   })
   try {
-    await chooseSource(viewer, 3)
+    await chooseSource(viewer, 4)
     await viewer.app.waitForFrame((frame) => frame.includes("origin/release"))
     viewer.app.mockInput.pressArrow("down")
     viewer.app.mockInput.pressEscape()
@@ -540,7 +602,7 @@ test("dismissing the base picker leaves the comparison unchanged", async () => {
 test("the base picker remembers its captured location without refreshing a moved session", async () => {
   const viewer = await renderDiffViewer(hunkDiff, { height: 30, kittyKeyboard: true })
   try {
-    await chooseSource(viewer, 3)
+    await chooseSource(viewer, 4)
     await viewer.app.waitForFrame((frame) => frame.includes("origin/release"))
     viewer.setSessionLocation({ directory: "/repo/moved" })
     await viewer.app.flush()
@@ -1800,7 +1862,7 @@ async function renderDiffViewer(
     onSessionTab?: () => void
     keybinds?: TuiKeybind.KeybindOverrides
     kittyKeyboard?: boolean
-    source?: "branch" | "committed" | "working"
+    source?: "branch" | "committed" | "working" | "turn"
     base?: typeof baseFixture | null
     open?: boolean
     pending?: boolean
@@ -1865,6 +1927,7 @@ async function renderDiffViewer(
       mode: url.searchParams.get("mode"),
       context: url.searchParams.get("context"),
       ...(url.searchParams.has("base") ? { base: url.searchParams.get("base") } : {}),
+      ...(url.searchParams.has("sessionID") ? { sessionID: url.searchParams.get("sessionID") } : {}),
     }
     if (options.diffResponse) return options.diffResponse(url)
     if (options.fail) return json({ message: "boom" }, { status: 500 })
