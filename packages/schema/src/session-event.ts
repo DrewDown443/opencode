@@ -174,6 +174,13 @@ export const Forked = Event.durable({
     ...Base,
     parentID: SessionID,
     boundary: SessionFork.Boundary,
+    start: SessionMessage.ID.pipe(optional),
+    child: Schema.Struct({
+      type: Schema.tag("child"),
+      title: Created.data.fields.title,
+      agent: Created.data.fields.agent,
+      model: Created.data.fields.model,
+    }).pipe(optional),
     instructions: Instruction.Values.pipe(optional),
     instructionEntries: InstructionEntry.Snapshot.pipe(optional),
   },

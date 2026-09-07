@@ -55,6 +55,29 @@ const forkTitle = (value?: string) => {
   return `${value} (fork #1)`
 }
 
+const childForkMessage = (row: typeof SessionMessageTable.$inferSelect) => {
+  if (row.type === "user" || row.type === "system" || row.type === "skill") return { type: row.type, data: row.data }
+  const message = decodeMessage({ ...row.data, id: row.id, type: row.type })
+  if (message.type === "compaction")
+    return message.status === "completed" ? { type: row.type, data: row.data } : undefined
+  if (message.type !== "assistant" || !message.finish || message.finish === "tool-calls" || message.finish === "error")
+    return undefined
+  const content = message.content.filter((item) => item.type === "text" && item.text.length > 0)
+  if (content.length === 0) return undefined
+  const encoded = encodeMessage({
+    ...message,
+    content,
+    snapshot: undefined,
+    providerState: undefined,
+    cost: undefined,
+    tokens: undefined,
+    retry: undefined,
+  })
+  const { id, type, ...data } = encoded
+  void id
+  return { type, data }
+}
+
 function applyUsage(db: DatabaseService, sessionID: SessionSchema.ID, value: Usage) {
   return db
     .update(SessionTable)
@@ -127,6 +150,18 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
     .pipe(Effect.orDie)
   if (!boundary)
     return yield* Effect.die(new Error(`Fork boundary message not found: ${event.data.boundary.messageID}`))
+  const start = event.data.start
+    ? yield* db
+        .select({ seq: SessionMessageTable.seq })
+        .from(SessionMessageTable)
+        .where(
+          and(eq(SessionMessageTable.session_id, event.data.parentID), eq(SessionMessageTable.id, event.data.start)),
+        )
+        .get()
+        .pipe(Effect.orDie)
+    : undefined
+  if (event.data.start && !start)
+    return yield* Effect.die(new Error(`Fork start message not found: ${event.data.start}`))
   const copied = yield* db
     .select({ seq: SessionMessageTable.seq })
     .from(SessionMessageTable)
@@ -148,7 +183,7 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
     .insert(SessionTable)
     .values({
       id: event.data.sessionID,
-      parent_id: null,
+      parent_id: event.data.child?.type === "child" ? event.data.parentID : null,
       fork_session_id: event.data.parentID,
       fork_boundary: event.data.boundary,
       project_id: parent.project_id,
@@ -156,9 +191,9 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
       slug: Slug.create(),
       directory: parent.directory,
       path: parent.path,
-      title: forkTitle(parent.title ?? undefined),
-      agent: parent.agent,
-      model: parent.model,
+      title: event.data.child?.title ?? forkTitle(parent.title ?? undefined),
+      agent: event.data.child?.agent ?? parent.agent,
+      model: event.data.child?.model ?? parent.model,
       metadata: parent.metadata,
       version: parent.version,
       cost: 0,
@@ -188,7 +223,11 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
         and(
           eq(SessionMessageTable.session_id, event.data.parentID),
           gt(SessionMessageTable.seq, cursor),
+          start ? gte(SessionMessageTable.seq, start.seq) : undefined,
           lt(SessionMessageTable.seq, copiedSeq + 1),
+          event.data.child
+            ? inArray(SessionMessageTable.type, ["user", "system", "skill", "assistant", "compaction"])
+            : undefined,
           // Terminal events for active projections stay on the parent, so forks copy only settled history.
           sql`${SessionMessageTable.type} != 'assistant' or json_extract(${SessionMessageTable.data}, '$.time.completed') is not null`,
           sql`${SessionMessageTable.type} != 'shell' or json_extract(${SessionMessageTable.data}, '$.status') != 'running'`,
@@ -201,21 +240,23 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
       .pipe(Effect.orDie)
     if (rows.length === 0) break
 
-    yield* db
-      .insert(SessionMessageTable)
-      .values(
-        rows.map((row) => ({
-          id: SessionMessage.ID.make(`${SessionMessage.ID.fromEvent(event.id)}_${row.seq}`),
-          session_id: event.data.sessionID,
-          type: row.type,
-          seq: row.seq,
-          time_created: row.time_created,
-          time_updated: row.time_updated,
-          data: row.data,
-        })),
-      )
-      .run()
-      .pipe(Effect.orDie)
+    const messages = rows.flatMap((row) => {
+      const message = event.data.child?.type === "child" ? childForkMessage(row) : { type: row.type, data: row.data }
+      return message
+        ? [
+            {
+              id: SessionMessage.ID.make(`${SessionMessage.ID.fromEvent(event.id)}_${row.seq}`),
+              session_id: event.data.sessionID,
+              type: message.type,
+              seq: row.seq,
+              time_created: row.time_created,
+              time_updated: row.time_updated,
+              data: message.data,
+            },
+          ]
+        : []
+    })
+    if (messages.length > 0) yield* db.insert(SessionMessageTable).values(messages).run().pipe(Effect.orDie)
 
     cursor = rows.at(-1)!.seq
   }

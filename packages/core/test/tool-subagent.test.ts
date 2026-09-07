@@ -433,6 +433,126 @@ describe("SubagentTool", () => {
     ),
   )
 
+  it.live("forks all, recent, or no parent turns into a new child", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
+          const sessions = yield* Session.Service
+          const parent = yield* sessions.create({ location, model: parentModel })
+          yield* withSubagent(parent.location)
+          const bus = yield* Bus.Service
+          const database = yield* Database.Service
+          const addUser = Effect.fn("SubagentTest.addUser")(function* (text: string) {
+            yield* sessions.prompt({ sessionID: parent.id, text, resume: false })
+            yield* SessionInbox.promote(database.db, bus, parent.id, "steer")
+          })
+          const addAssistant = Effect.fn("SubagentTest.addAssistant")(function* (
+            text: string,
+            finish: "stop" | "tool-calls",
+            reasoning?: string,
+          ) {
+            const assistantMessageID = SessionMessage.ID.create()
+            yield* bus.publish(SessionEvent.Step.Started, {
+              sessionID: parent.id,
+              assistantMessageID,
+              agent: Agent.ID.make("build"),
+              model: parentModel,
+            })
+            if (reasoning) {
+              yield* bus.publish(SessionEvent.Reasoning.Started, {
+                sessionID: parent.id,
+                assistantMessageID,
+                ordinal: 0,
+              })
+              yield* bus.publish(SessionEvent.Reasoning.Ended, {
+                sessionID: parent.id,
+                assistantMessageID,
+                ordinal: 0,
+                text: reasoning,
+              })
+            }
+            yield* bus.publish(SessionEvent.Text.Started, {
+              sessionID: parent.id,
+              assistantMessageID,
+              ordinal: reasoning ? 1 : 0,
+            })
+            yield* bus.publish(SessionEvent.Text.Ended, {
+              sessionID: parent.id,
+              assistantMessageID,
+              ordinal: reasoning ? 1 : 0,
+              text,
+            })
+            yield* bus.publish(SessionEvent.Step.Ended, {
+              sessionID: parent.id,
+              assistantMessageID,
+              finish,
+              cost: Money.USD.make(1),
+              tokens,
+            })
+          })
+
+          yield* addUser("old task")
+          yield* addAssistant("old final answer", "stop", "private reasoning")
+          yield* addUser("recent task")
+          yield* addAssistant("working on it", "tool-calls")
+          yield* addUser("current task")
+
+          const locations = yield* LocationServiceMap.Service
+          const registry = yield* Tool.Service.pipe(Effect.provide(locations.get(parent.location)))
+          const run = (id: string, fork_turns?: string) =>
+            executeTool(registry, {
+              sessionID: parent.id,
+              ...toolIdentity,
+              call: {
+                type: "tool-call" as const,
+                id,
+                name: SubagentTool.name,
+                input: {
+                  agent: "reviewer",
+                  description: "review",
+                  prompt: "review this",
+                  ...(fork_turns === undefined ? {} : { fork_turns }),
+                },
+              },
+            })
+
+          const all = yield* run("call-fork-all")
+          const allChild = yield* sessions.get(outputSessionID(all.metadata))
+          expect(allChild).toMatchObject({ parentID: parent.id, fork: { sessionID: parent.id } })
+          expect((yield* sessions.context(allChild.id)).slice(0, -1)).toMatchObject([
+            { type: "user", text: "old task" },
+            { type: "assistant", content: [{ type: "text", text: "old final answer" }] },
+            { type: "user", text: "recent task" },
+            { type: "user", text: "current task" },
+          ])
+
+          const recent = yield* run("call-fork-recent", "2")
+          expect((yield* sessions.context(outputSessionID(recent.metadata))).slice(0, -1)).toMatchObject([
+            { type: "user", text: "recent task" },
+            { type: "user", text: "current task" },
+          ])
+
+          const none = yield* run("call-fork-none", "none")
+          expect(yield* sessions.context(outputSessionID(none.metadata))).toMatchObject([
+            { type: "assistant", content: [{ type: "text", text: childText }] },
+          ])
+
+          expect(yield* run("call-fork-invalid", "0")).toEqual({
+            status: "error",
+            error: {
+              type: "tool.execution",
+              message: "Invalid fork_turns value '0'. Expected 'none', 'all', or a positive integer string.",
+            },
+          })
+        }),
+      ),
+    ),
+  )
+
   it.live("continues an existing child session", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
