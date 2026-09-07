@@ -4223,6 +4223,27 @@ export type SessionContextInput = { readonly sessionID: { readonly sessionID: st
 
 export type SessionContextOutput = { data: Array<SessionMessageInfo> }["data"]
 
+export type SessionDiffInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly messageID?: {
+    readonly messageID?: string | undefined
+    readonly to?: string | undefined
+    readonly context?: number | undefined
+  }["messageID"]
+  readonly to?: {
+    readonly messageID?: string | undefined
+    readonly to?: string | undefined
+    readonly context?: number | undefined
+  }["to"]
+  readonly context?: {
+    readonly messageID?: string | undefined
+    readonly to?: string | undefined
+    readonly context?: number | undefined
+  }["context"]
+}
+
+export type SessionDiffOutput = { data: Array<FileDiffInfo> }["data"]
+
 export type SessionInboxListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionInboxListOutput = { data: Array<SessionInboxInfo> }["data"]

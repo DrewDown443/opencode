@@ -17,6 +17,7 @@ import type { PromptInput } from "@opencode-ai/schema/prompt-input"
 import type { AgentAttachment } from "@opencode-ai/schema/prompt"
 import type { Skill } from "@opencode-ai/schema/skill"
 import type { Event } from "@opencode-ai/schema/event"
+import type { FileDiff } from "@opencode-ai/schema/file-diff"
 import type { InstructionEntry } from "@opencode-ai/schema/instruction-entry"
 import type { Schema } from "effect"
 import type { EventLog } from "@opencode-ai/schema/event-log"
@@ -36,7 +37,6 @@ import type { PtyTicket } from "@opencode-ai/schema/pty-ticket"
 import type { Reference } from "@opencode-ai/schema/reference"
 import type { Worktree } from "@opencode-ai/schema/worktree"
 import type { Vcs } from "@opencode-ai/schema/vcs"
-import type { FileDiff } from "@opencode-ai/schema/file-diff"
 import type { WebSearch } from "@opencode-ai/schema/websearch"
 import type { Config } from "@opencode-ai/schema/config"
 
@@ -359,6 +359,15 @@ export type SessionRevertCommitOperation<E = never> = (
 export type SessionContextInput = { readonly sessionID: Session.ID }
 export type SessionContextOutput = ReadonlyArray<SessionMessage.Info>
 export type SessionContextOperation<E = never> = (input: SessionContextInput) => Effect.Effect<SessionContextOutput, E>
+
+export type SessionDiffInput = {
+  readonly sessionID: Session.ID
+  readonly messageID?: SessionMessage.ID | undefined
+  readonly to?: SessionMessage.ID | undefined
+  readonly context?: number | undefined
+}
+export type SessionDiffOutput = ReadonlyArray<FileDiff.Info>
+export type SessionDiffOperation<E = never> = (input: SessionDiffInput) => Effect.Effect<SessionDiffOutput, E>
 
 export type SessionInboxListInput = { readonly sessionID: Session.ID }
 export type SessionInboxListOutput = ReadonlyArray<SessionInbox.Info>
@@ -1133,6 +1142,7 @@ export interface SessionApi<E = never> {
     readonly commit: SessionRevertCommitOperation<E>
   }
   readonly context: SessionContextOperation<E>
+  readonly diff: SessionDiffOperation<E>
   readonly inbox: {
     readonly list: SessionInboxListOperation<E>
     readonly cancel: SessionInboxCancelOperation<E>

@@ -30,6 +30,7 @@ import { Model } from "@opencode-ai/schema/model"
 import { Location } from "@opencode-ai/schema/location"
 import { SessionEvent } from "@opencode-ai/schema/session-event"
 import { EventLog } from "@opencode-ai/schema/event-log"
+import { FileDiff } from "@opencode-ai/schema/file-diff"
 
 const ParentIDFilter = Schema.Union([
   Session.ID,
@@ -518,6 +519,31 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           identifier: "v2.session.context",
           summary: "Get session context",
           description: "Retrieve the active context messages for a session (all messages after the last compaction).",
+        }),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.diff", "/api/session/:sessionID/diff", {
+        params: { sessionID: Session.ID },
+        query: Schema.Struct({
+          messageID: Schema.optional(SessionMessage.ID).annotate({
+            description: "User message whose turn to diff. Defaults to the turn of the newest user message.",
+          }),
+          to: Schema.optional(SessionMessage.ID).annotate({
+            description: "Later user message whose turn ends the range. Defaults to the turn of `messageID` alone.",
+          }),
+          context: Schema.NumberFromString.pipe(Schema.decodeTo(NonNegativeInt), Schema.optional).annotate({
+            description: "Unchanged lines around each hunk. Omit for full-file patches.",
+          }),
+        }),
+        success: Schema.Struct({ data: Schema.Array(FileDiff.Info) }),
+        error: [InvalidRequestError, MessageNotFoundError, SessionNotFoundError, UnknownError],
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.session.diff",
+          summary: "Diff session turns",
+          description:
+            "Structured per-file diffs of the files a turn changed. A turn runs from the first prompt after the session was last idle until its next idle marker, so prompts steered in while it was busy belong to the same turn; `to` extends the range through a later turn. Compares the range's first recorded snapshot with its last; a step still running in the active session compares against the working copy. Ranges that span a location change are rejected. In sessions without any idle marker, a prompt's turn spans until the next user message.",
         }),
       ),
     )
