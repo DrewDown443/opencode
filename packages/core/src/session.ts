@@ -57,8 +57,10 @@ import { SessionModelTransport } from "./session/model-transport.js"
 import { llmClient } from "./effect/app-node-platform.js"
 import { Snapshot } from "./snapshot.js"
 import { Session } from "./session/session.js"
+import { SessionTurnDiff } from "./session/turn-diff.js"
 import { FSUtil } from "@opencode-ai/util/fs-util"
 import type { EventLog } from "@opencode-ai/schema/event-log"
+import type { FileDiff } from "@opencode-ai/schema/file-diff"
 import { Job } from "./job.js"
 import type { Command } from "./command.js"
 import { SessionEnvironment } from "./session/environment.js"
@@ -142,6 +144,11 @@ export interface Interface {
   readonly context: (
     sessionID: SessionSchema.ID,
   ) => Effect.Effect<SessionMessage.Info[], NotFoundError | MessageDecodeError>
+  /** Structured diffs of the files changed by the Session's last turn; see `SessionTurnDiff.last`. */
+  readonly turnDiff: (input: {
+    readonly sessionID: SessionSchema.ID
+    readonly context?: number
+  }) => Effect.Effect<readonly FileDiff.Info[], NotFoundError | Snapshot.Error>
   /**
    * Durable admitted session work not yet visible in projected history,
    * ordered by admission. Includes unpromoted user and synthetic inputs and
@@ -361,6 +368,13 @@ const layer = Layer.effect(
       context: Effect.fn("Session.context")(function* (sessionID) {
         yield* result.get(sessionID)
         return yield* store.context(sessionID)
+      }),
+      turnDiff: Effect.fn("Session.turnDiff")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        return yield* SessionTurnDiff.last({ session, context: input.context }).pipe(
+          Effect.provideService(Instance.Service, instances),
+          Effect.provideService(Database.Service, database),
+        )
       }),
       inbox: (sessionID) => sessions.forSession(sessionID).inbox(),
       cancelInbox: (input) => sessions.forSession(input.sessionID).cancelInbox(input.inboxID),

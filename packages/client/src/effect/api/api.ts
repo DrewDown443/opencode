@@ -2020,8 +2020,9 @@ export type VcsBranchesOperation<E = never> = (input?: VcsBranchesInput) => Effe
 
 export type VcsDiffInput = {
   readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-  readonly mode: Vcs.Mode
+  readonly mode: Vcs.DiffSource
   readonly base?: string | undefined
+  readonly sessionID?: Session.ID | undefined
   readonly context?: number | undefined
 }
 export type VcsDiffOutput = { readonly location: Location.Info; readonly data: ReadonlyArray<FileDiff.Info> }

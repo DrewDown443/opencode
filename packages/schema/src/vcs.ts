@@ -24,8 +24,16 @@ export const Base = Schema.Struct({
 }).annotate({ identifier: "Vcs.Base" })
 export interface Base extends Schema.Schema.Type<typeof Base> {}
 
+/** Comparisons a VCS backend can produce. */
 export const Mode = Schema.Literals(["working", "branch", "committed"]).annotate({ identifier: "Vcs.Mode" })
 export type Mode = typeof Mode.Type
+
+/**
+ * Diff route sources: VCS comparisons plus `turn`, the Snapshot-backed changes
+ * of a Session's last turn, which requires a Session ID instead of a base.
+ */
+export const DiffSource = Schema.Literals([...Mode.literals, "turn"]).annotate({ identifier: "Vcs.DiffSource" })
+export type DiffSource = typeof DiffSource.Type
 
 export const FileStatus = Schema.Struct({
   file: Schema.String,

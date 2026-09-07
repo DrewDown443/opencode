@@ -6228,26 +6228,37 @@ export type VcsBranchesOutput = {
 export type VcsDiffInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly mode: "working" | "branch" | "committed"
+    readonly mode: "working" | "branch" | "committed" | "turn"
     readonly base?: string | undefined
+    readonly sessionID?: string | undefined
     readonly context?: number | undefined
   }["location"]
   readonly mode: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly mode: "working" | "branch" | "committed"
+    readonly mode: "working" | "branch" | "committed" | "turn"
     readonly base?: string | undefined
+    readonly sessionID?: string | undefined
     readonly context?: number | undefined
   }["mode"]
   readonly base?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly mode: "working" | "branch" | "committed"
+    readonly mode: "working" | "branch" | "committed" | "turn"
     readonly base?: string | undefined
+    readonly sessionID?: string | undefined
     readonly context?: number | undefined
   }["base"]
+  readonly sessionID?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+    readonly mode: "working" | "branch" | "committed" | "turn"
+    readonly base?: string | undefined
+    readonly sessionID?: string | undefined
+    readonly context?: number | undefined
+  }["sessionID"]
   readonly context?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly mode: "working" | "branch" | "committed"
+    readonly mode: "working" | "branch" | "committed" | "turn"
     readonly base?: string | undefined
+    readonly sessionID?: string | undefined
     readonly context?: number | undefined
   }["context"]
 }

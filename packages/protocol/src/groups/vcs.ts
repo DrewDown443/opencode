@@ -1,11 +1,12 @@
 import { FileDiff } from "@opencode-ai/schema/file-diff"
 import { Location } from "@opencode-ai/schema/location"
 import { NonNegativeInt, PositiveInt, optional } from "@opencode-ai/schema/schema"
+import { Session } from "@opencode-ai/schema/session"
 import { Vcs } from "@opencode-ai/schema/vcs"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { LocationQuery, locationQueryOpenApi } from "./location.js"
-import { ServiceUnavailableError } from "../errors.js"
+import { ServiceUnavailableError, SessionNotFoundError } from "../errors.js"
 
 const BranchesQuery = Schema.Struct({
   ...LocationQuery.fields,
@@ -15,8 +16,10 @@ const BranchesQuery = Schema.Struct({
 
 const DiffQuery = Schema.Struct({
   ...LocationQuery.fields,
-  mode: Vcs.Mode,
+  mode: Vcs.DiffSource,
   base: optional(Schema.String),
+  /** Required by the `turn` source; ignored by VCS comparisons. */
+  sessionID: optional(Session.ID),
   context: Schema.NumberFromString.pipe(Schema.decodeTo(NonNegativeInt), Schema.optional),
 })
 
@@ -83,7 +86,7 @@ export const VcsGroup = HttpApiGroup.make("server.vcs")
     HttpApiEndpoint.get("vcs.diff", "/api/vcs/diff", {
       query: DiffQuery,
       success: Location.response(Schema.Array(FileDiff.Info)),
-      error: ServiceUnavailableError,
+      error: [ServiceUnavailableError, SessionNotFoundError],
     })
       .annotateMerge(locationQueryOpenApi)
       .annotateMerge(
@@ -91,7 +94,7 @@ export const VcsGroup = HttpApiGroup.make("server.vcs")
           identifier: "v2.vcs.diff",
           summary: "VCS diff",
           description:
-            "Diff HEAD to the working copy (working), the base merge-base to the working copy (branch), or the base merge-base to HEAD (committed). Omitting base preserves repository-default comparison; supplying it overrides the comparison without saving it.",
+            "Diff HEAD to the working copy (working), the base merge-base to the working copy (branch), the base merge-base to HEAD (committed), or the files changed by a session's last turn (turn, which requires sessionID and diffs the turn's first step snapshot against its last completed step or the working copy while it runs). Omitting base preserves repository-default comparison; supplying it overrides the comparison without saving it.",
         }),
       ),
   )

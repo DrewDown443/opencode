@@ -1621,14 +1621,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
                 }
               }
             }
@@ -12993,7 +12986,7 @@
             "name": "mode",
             "in": "query",
             "schema": {
-              "$ref": "#/components/schemas/Vcs.Mode"
+              "$ref": "#/components/schemas/Vcs.DiffSource"
             },
             "required": true
           },
@@ -13002,6 +12995,15 @@
             "in": "query",
             "schema": {
               "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "sessionID",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
             },
             "required": false
           },
@@ -13066,6 +13068,16 @@
               }
             }
           },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                }
+              }
+            }
+          },
           "503": {
             "description": "ServiceUnavailableError",
             "content": {
@@ -13077,7 +13089,7 @@
             }
           }
         },
-        "description": "Diff HEAD to the working copy (working), the base merge-base to the working copy (branch), or the base merge-base to HEAD (committed). Omitting base preserves repository-default comparison; supplying it overrides the comparison without saving it.",
+        "description": "Diff HEAD to the working copy (working), the base merge-base to the working copy (branch), the base merge-base to HEAD (committed), or the files changed by a session's last turn (turn, which requires sessionID and diffs the turn's first step snapshot against its last completed step or the working copy while it runs). Omitting base preserves repository-default comparison; supplying it overrides the comparison without saving it.",
         "summary": "VCS diff"
       }
     },
@@ -19597,6 +19609,10 @@
           "type": "string"
         }
       },
+      "Vcs.DiffSource": {
+        "type": "string",
+        "enum": ["working", "branch", "committed", "turn"]
+      },
       "Vcs.FileStatus": {
         "type": "object",
         "properties": {
@@ -19628,10 +19644,6 @@
         },
         "required": ["branch"],
         "additionalProperties": false
-      },
-      "Vcs.Mode": {
-        "type": "string",
-        "enum": ["working", "branch", "committed"]
       },
       "WebSearch.Provider": {
         "type": "object",
