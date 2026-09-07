@@ -49,6 +49,36 @@ migration rules remain explicit in their schemas.
   invalid entries individually. Valid entries still pass through their codecs.
 - Recovery is not a substitute for an explicit historical shape transformation.
 
+## Writes
+
+The setter returned by `persisted()` only marks the store dirty (`persist.ts`). The store is
+serialized once per save window (`persistSaveDelay`), on owner cleanup, and when the page
+hides, and the write is skipped when the serialized form did not change. Reactive observers
+therefore see every mutation immediately and a burst of setter calls costs one encode. Call
+`flushPersisted()` when a test or a shutdown path needs the write to have happened; the
+desktop platform calls it before flushing its namespaces on shutdown. A real unsaved local
+change wins over a value arriving from another window, and over a stored value that finishes
+loading after the user already edited. A remote value that arrives while the store is dirty
+is held until the save runs; if the local setter calls turned out not to change the
+serialized form, the remote value is adopted instead of being lost.
+
+## Namespaces
+
+On desktop, `platform.storage(name)` returns a `NamespaceStorage` (`namespace.ts`): the
+in-memory truth for one storage namespace, modelled on VS Code's `Storage` class. The
+namespace is loaded from the host once, reads are Map lookups from then on, and writes
+update the cache immediately while being batched into one host round trip per flush
+window (`namespaceFlushDelay`). `flush()` hands the batch to the driver synchronously, so a
+flush on page hide is on the wire before the page goes away; the desktop platform flushes
+every namespace before the IPC runtime is disposed and whenever the window is hidden. Each
+local write carries a sequence number that is kept until the host accepts that exact write;
+until then neither the initial load, a change from another window (`accept`), nor the retry
+of an older failed batch can replace the key. The host also stamps every update with a
+monotonic revision, returned in the ack and carried by change events and loads, so an event
+that reaches a window after a newer ack or load for the same key is recognised as stale and
+dropped; an event held back during an in-flight write is applied after the ack when the host
+ordered it later.
+
 ## Migrations
 
 Describe shipped representations with schemas and transform their typed values
