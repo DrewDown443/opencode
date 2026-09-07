@@ -305,6 +305,7 @@ export function reduceSessionRows(messages: SessionMessageInfo[], inputs = new S
     ...messages.filter(isInput),
   ].reduce<SessionRow[]>((rows, message) => {
     if (message.type !== "assistant") {
+      if (message.type === "idle") return rows
       if (message.type === "synthetic" && !message.description?.trim()) return rows
       if (message.type === "compaction" && message.status === "completed" && usage) usage.previousTurnCache = undefined
       if (!pending.has(message.id)) completePrevious(rows)

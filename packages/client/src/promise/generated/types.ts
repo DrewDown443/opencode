@@ -147,6 +147,14 @@ export type SessionProviderContextProvenance = {
   endpoint: string
 }
 
+export type SessionMessageIdle = {
+  id: string
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  type: "idle"
+  outcome: "succeeded" | "failed" | "interrupted"
+}
+
 export type SessionActive = { type: "running" }
 
 export type SessionInboxDelivery = "steer" | "queue"
@@ -2177,6 +2185,7 @@ export type SessionMessageInfo =
   | SessionMessageShell
   | SessionMessageAssistant
   | SessionMessageCompaction
+  | SessionMessageIdle
 
 export type SessionMessageContentUpdated = {
   id: string
@@ -3122,6 +3131,13 @@ export type SessionImportInput = {
               readonly error: { readonly type: string; readonly message: string; readonly status?: number }
             }
         )
+      | {
+          readonly id: string
+          readonly metadata?: { readonly [x: string]: JsonValue }
+          readonly time: { readonly created: number }
+          readonly type: "idle"
+          readonly outcome: "succeeded" | "failed" | "interrupted"
+        }
     >
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
   }["info"]
@@ -3413,6 +3429,13 @@ export type SessionImportInput = {
               readonly error: { readonly type: string; readonly message: string; readonly status?: number }
             }
         )
+      | {
+          readonly id: string
+          readonly metadata?: { readonly [x: string]: JsonValue }
+          readonly time: { readonly created: number }
+          readonly type: "idle"
+          readonly outcome: "succeeded" | "failed" | "interrupted"
+        }
     >
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
   }["messages"]
@@ -3704,6 +3727,13 @@ export type SessionImportInput = {
               readonly error: { readonly type: string; readonly message: string; readonly status?: number }
             }
         )
+      | {
+          readonly id: string
+          readonly metadata?: { readonly [x: string]: JsonValue }
+          readonly time: { readonly created: number }
+          readonly type: "idle"
+          readonly outcome: "succeeded" | "failed" | "interrupted"
+        }
     >
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
   }["location"]
