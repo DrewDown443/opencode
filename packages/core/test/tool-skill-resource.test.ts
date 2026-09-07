@@ -11,7 +11,7 @@ import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { Watcher } from "@opencode-ai/core/filesystem/watcher"
 import { Image } from "@opencode-ai/core/image"
 import { Location } from "@opencode-ai/core/location"
-import { LocationMutation } from "@opencode-ai/core/location-mutation"
+import { FileAccess } from "@opencode-ai/core/file-access"
 import { Permission } from "@opencode-ai/core/permission"
 import { Project } from "@opencode-ai/core/project"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
@@ -73,7 +73,7 @@ const fixture = (symlink: boolean) =>
         Agent.node,
         Permission.node,
         FSUtil.node,
-        LocationMutation.node,
+        FileAccess.node,
         ReadToolFileSystem.node,
         SessionInstructions.node,
       ]),
@@ -212,6 +212,16 @@ describe("skill supporting files", () => {
 
           // The read's allowance is not saved or reused by another external action.
           yield* permission.assert({ sessionID, action: "external_directory", resources: [boundary] })
+          expect(requests.map((request) => request.action)).toEqual(["external_directory"])
+          requests.length = 0
+
+          const access = yield* FileAccess.Service
+          const target = yield* access.resolve({ path: reference, kind: "file" })
+          yield* access.authorizeExternal([target], {
+            sessionID,
+            ...toolIdentity,
+            id: Tool.CallID.make("external-skill-resource"),
+          })
           expect(requests.map((request) => request.action)).toEqual(["external_directory"])
           requests.length = 0
 

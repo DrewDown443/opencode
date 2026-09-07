@@ -27,10 +27,13 @@ import { createSessionReview } from "./review/model"
 import { SessionDesktopReview, SessionMobileReview, SessionMobileViewTabs } from "./review/view"
 import { SessionContextTab } from "./files/session-context-tab"
 import { createSessionTimelineInteraction } from "./timeline/interaction"
+import { createTimelineSearchController } from "./timeline/search-controller"
+import { TimelineSearchBar } from "./timeline/search-bar"
 import { ActiveSessionComposerRegion, createActiveSessionRegion } from "./composer/region"
 import { SessionIdentityHeader } from "./session-identity-header"
 import { SessionReviewToggle } from "./header/session-header-actions"
 import { createAnimatedPresence } from "@/runtime/animated-presence"
+import { createSessionBrowser } from "./browser/model"
 
 const SessionMobileFiles = lazy(async () => {
   const { SessionMobileFiles } = await import("./files/session-mobile-files")
@@ -45,8 +48,15 @@ export function SessionScreen(props: { session: SessionModel }) {
     return info ? projectForSession(info, server.ctx.sync.data.project) : undefined
   })
   const isDesktop = session.isDesktop
+  const browser = createSessionBrowser(session)
   const screen = createSessionScreenLayout(session)
   const timeline = createSessionTimelineInteraction(session)
+  const timelineSearch = createTimelineSearchController({
+    sessionID: session.identity.sessionID,
+    scrollRef: timeline.scroller,
+    revealMessage: timeline.actions.revealMessage,
+    pauseAutoScroll: timeline.view.unpin,
+  })
   const messagesReady = timeline.ready
   const [store, setStore] = createStore({
     deferRender: false,
@@ -262,6 +272,7 @@ export function SessionScreen(props: { session: SessionModel }) {
                   anchor={timeline.view.anchor}
                   setRevealMessage={timeline.view.setRevealMessage}
                   setScrollToEnd={timeline.view.setScrollToEnd}
+                  search={<TimelineSearchBar controller={timelineSearch} />}
                 />
               )}
             </Show>
@@ -368,7 +379,7 @@ export function SessionScreen(props: { session: SessionModel }) {
                         setStore("sideReviewPresent", false)
                       }}
                     >
-                      <SessionDesktopReview review={review} present={store.sideReviewPresent} />
+                      <SessionDesktopReview review={review} browser={browser} present={store.sideReviewPresent} />
                     </div>
                   </Show>
                 </div>

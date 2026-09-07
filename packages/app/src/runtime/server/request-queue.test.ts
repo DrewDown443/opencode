@@ -1,19 +1,30 @@
 import { describe, expect, test } from "bun:test"
-import { createRequestQueue } from "./request-queue"
+import { createRequestQueue, isSetupRequest, isSlowRequest } from "./request-queue"
 
-function setup(input?: { limit?: number; stallMs?: number }) {
-  const pending: Array<{ url: string; resolve: () => void }> = []
+function setup(input?: {
+  limit?: number
+  slowLimit?: number
+  stallMs?: number
+  headersTimeoutMs?: number
+  setupHeadersTimeoutMs?: number
+}) {
+  const pending: Array<{ url: string; signal: AbortSignal; resolve: () => void }> = []
   const logs: Array<{ message: string; data: Record<string, unknown> }> = []
   let clock = 0
   const queue = createRequestQueue({
     limit: input?.limit ?? 2,
+    slowLimit: input?.slowLimit,
     stallMs: input?.stallMs,
+    headersTimeoutMs: input?.headersTimeoutMs,
+    setupHeadersTimeoutMs: input?.setupHeadersTimeoutMs,
     now: () => clock,
     log: (message, data) => logs.push({ message, data }),
     fetch: Object.assign(
-      (resource: RequestInfo | URL) =>
-        new Promise<Response>((resolve) => {
-          pending.push({ url: new Request(resource).url, resolve: () => resolve(new Response("ok")) })
+      (resource: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((resolve, reject) => {
+          const request = new Request(resource, init)
+          request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true })
+          pending.push({ url: request.url, signal: request.signal, resolve: () => resolve(new Response("ok")) })
         }),
       { preconnect() {} },
     ),
@@ -37,6 +48,41 @@ describe("createRequestQueue", () => {
     expect(input.queue.inflight()).toBe(0)
   })
 
+  test("slow endpoints hold at most their share of slots so small reads go first", async () => {
+    const input = setup({ limit: 4, slowLimit: 2 })
+    const paths = [
+      "/api/vcs?location[directory]=%2Fa",
+      "/api/vcs/diff?location[directory]=%2Fa",
+      "/api/worktree",
+      "/api/session/ses_1",
+    ]
+    const responses = paths.map((path) => input.queue.fetch(`http://server${path}`))
+    await input.settle()
+    const started = () => input.pending.map((item) => new URL(item.url).pathname)
+    // Two slow requests fill the slow share; the worktree read waits while the session read jumps ahead.
+    expect(started()).toEqual(["/api/vcs", "/api/vcs/diff", "/api/session/ses_1"])
+    expect(input.queue.inflight()).toBe(3)
+    expect(input.queue.queued()).toBe(1)
+    // A fast request finishing does not free a slow slot.
+    input.pending[2]!.resolve()
+    await input.settle()
+    expect(started()).toEqual(["/api/vcs", "/api/vcs/diff", "/api/session/ses_1"])
+    input.pending[0]!.resolve()
+    await input.settle()
+    expect(started()).toEqual(["/api/vcs", "/api/vcs/diff", "/api/session/ses_1", "/api/worktree"])
+    input.pending.forEach((item) => item.resolve())
+    await Promise.all(responses)
+    expect(input.queue.inflight()).toBe(0)
+  })
+
+  test("classifies git and worktree endpoints as slow", () => {
+    expect(isSlowRequest("/api/vcs")).toBe(true)
+    expect(isSlowRequest("/api/vcs/branches")).toBe(true)
+    expect(isSlowRequest("/api/worktree")).toBe(true)
+    expect(isSlowRequest("/api/vcsx")).toBe(false)
+    expect(isSlowRequest("/api/session")).toBe(false)
+  })
+
   test("never counts the event stream against the budget", async () => {
     const input = setup({ limit: 1 })
     void input.queue.fetch("http://server/api/session")
@@ -56,6 +102,54 @@ describe("createRequestQueue", () => {
     input.pending[0]!.resolve()
     await expect(aborted).rejects.toBeInstanceOf(DOMException)
     expect(input.pending.map((item) => new URL(item.url).pathname)).toEqual(["/api/first"])
+    expect(input.queue.inflight()).toBe(0)
+  })
+
+  test("a request the server never answers times out and frees its slot", async () => {
+    const input = setup({ limit: 1, headersTimeoutMs: 10 })
+    const dead = input.queue.fetch("http://server/api/dead")
+    const next = input.queue.fetch("http://server/api/next")
+    await input.settle()
+    expect(input.queue.queued()).toBe(1)
+    const error = await dead.catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(DOMException)
+    expect((error as DOMException).name).toBe("TimeoutError")
+    await input.settle()
+    expect(input.pending.map((item) => new URL(item.url).pathname)).toEqual(["/api/dead", "/api/next"])
+    input.pending[1]!.resolve()
+    await expect(next).resolves.toBeInstanceOf(Response)
+    expect(input.queue.inflight()).toBe(0)
+  })
+
+  test("worktree creation gets the setup deadline while worktree reads keep the normal one", async () => {
+    const input = setup({ limit: 4, headersTimeoutMs: 10, setupHeadersTimeoutMs: 200 })
+    const create = input.queue.fetch("http://server/api/worktree?location[directory]=%2Fa", { method: "POST" })
+    const list = input.queue.fetch("http://server/api/worktree?location[directory]=%2Fa")
+    const listError = await list.catch((cause: unknown) => cause)
+    expect((listError as DOMException).name).toBe("TimeoutError")
+    // Past the normal deadline, the create is still on the wire.
+    expect(input.pending[0]!.signal.aborted).toBe(false)
+    input.pending[0]!.resolve()
+    await expect(create).resolves.toBeInstanceOf(Response)
+    expect(input.queue.inflight()).toBe(0)
+  })
+
+  test("only worktree creation counts as a setup request", () => {
+    expect(isSetupRequest("POST", "/api/worktree")).toBe(true)
+    expect(isSetupRequest("GET", "/api/worktree")).toBe(false)
+    expect(isSetupRequest("POST", "/api/worktree/refresh")).toBe(false)
+    expect(isSetupRequest("DELETE", "/api/worktree")).toBe(false)
+  })
+
+  test("caller aborts still reach the underlying request", async () => {
+    const input = setup({ limit: 1 })
+    const controller = new AbortController()
+    const request = input.queue.fetch("http://server/api/slow", { signal: controller.signal })
+    await input.settle()
+    expect(input.pending[0]!.signal.aborted).toBe(false)
+    controller.abort()
+    expect(input.pending[0]!.signal.aborted).toBe(true)
+    await expect(request).rejects.toBeInstanceOf(DOMException)
     expect(input.queue.inflight()).toBe(0)
   })
 
