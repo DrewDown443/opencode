@@ -387,9 +387,7 @@ const layer = Layer.effect(
       maximumUntrackedFileBytes?: number
     }) {
       const list = (args: string[]) =>
-        repositoryOperation("refresh", input.repository, args).pipe(
-          Effect.map((result) => result.text.split("\0").filter(Boolean)),
-        )
+        repositoryOperation("refresh", input.repository, args).pipe(Effect.map((result) => nuls(result.text)))
       const [tracked, untracked] = yield* Effect.all(
         [
           list(["diff-files", "--name-only", "-z", "--", input.scope]),
@@ -466,13 +464,7 @@ const layer = Layer.effect(
           directory: input.repository.worktree,
           message: result.stderr.toString("utf8").trim() || "Failed to check ignored paths",
         })
-      return new Set(
-        result.stdout
-          .toString("utf8")
-          .split("\0")
-          .filter(Boolean)
-          .map((file) => RelativePath.make(file)),
-      )
+      return new Set(nuls(result.stdout.toString("utf8")).map((file) => RelativePath.make(file)))
     })
 
     const writeTree = Effect.fn("Git.tree.write")(function* (repository: Repository) {
@@ -527,13 +519,17 @@ const layer = Layer.effect(
     }) {
       if (input.paths?.length === 0) return []
       const args = ["--no-renames", input.from, input.to, "--", ...(input.paths ?? [])]
+      // Patch headers have no -z form: unquoted paths keep chunksByFile matching non-ASCII names.
       const [names, numbers, patch] = yield* Effect.all(
         [
           repositoryOperation("diff", input.repository, ["diff", "--name-status", "-z", ...args]),
           repositoryOperation("diff", input.repository, ["diff", "--numstat", "-z", ...args]),
-          repositoryOperation("diff", input.repository, ["diff", `--unified=${input.context ?? 3}`, ...args], {
-            maxOutputBytes: VcsPatch.MAX_TOTAL_PATCH_BYTES,
-          }),
+          repositoryOperation(
+            "diff",
+            input.repository,
+            ["-c", "core.quotepath=false", "diff", "--no-ext-diff", `--unified=${input.context ?? 3}`, ...args],
+            { maxOutputBytes: VcsPatch.MAX_TOTAL_PATCH_BYTES },
+          ),
         ],
         { concurrency: 3 },
       )

@@ -197,7 +197,7 @@ describe("Git trees", () => {
     }),
   )
 
-  it.live("caps batched tree patches and keeps per-file stats past the cap", () =>
+  it.live("caps batched tree patches, keeps per-file stats past the cap, and matches non-ASCII names", () =>
     Effect.gen(function* () {
       const root = yield* Effect.acquireRelease(
         Effect.promise(() => tmpdir()),
@@ -213,18 +213,22 @@ describe("Git trees", () => {
         await Bun.write(path.join(root.path, "a-small.txt"), "small\n")
         await Bun.write(path.join(root.path, "b-large.txt"), `${"x".repeat(79)}\n`.repeat(lines))
         await Bun.write(path.join(root.path, "c-binary.bin"), new Uint8Array([0, 1, 2, 3]))
+        await Bun.write(path.join(root.path, "a-caf\u00e9.txt"), "caf\u00e9\n")
       })
       const after = yield* git.tree.capture({ repository, scopes: [RelativePath.make(".")] })
 
       const diffs = yield* git.tree.diff({ repository, from: before, to: after, context: 0 })
       expect(diffs.map((item) => [item.file, item.status, item.additions, item.deletions])).toEqual([
+        ["a-caf\u00e9.txt", "added", 1, 0],
         ["a-small.txt", "added", 1, 0],
         ["b-large.txt", "added", lines, 0],
         ["c-binary.bin", "added", 0, 0],
       ])
-      expect(diffs[0]?.patch).toContain("+small\n")
-      expect(diffs[1]?.patch).toBe(VcsPatch.emptyPatch("b-large.txt"))
-      expect(diffs[2]?.patch).toBe("")
+      // Patch headers are not NUL-delimited; a quoted (octal-escaped) header would orphan this chunk.
+      expect(diffs[0]?.patch).toContain("+caf\u00e9\n")
+      expect(diffs[1]?.patch).toContain("+small\n")
+      expect(diffs[2]?.patch).toBe(VcsPatch.emptyPatch("b-large.txt"))
+      expect(diffs[3]?.patch).toBe("")
       expect(yield* git.tree.diff({ repository, from: before, to: after, paths: [] })).toEqual([])
     }),
   )
