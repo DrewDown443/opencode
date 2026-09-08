@@ -14,6 +14,8 @@
     "./effect": "./src/effect/index.ts",
     "./host": "./src/host.ts",
     "./tui": "./src/tui/index.ts",
+    "./desktop": "./src/desktop/index.ts",
+    "./desktop/solid": "./src/desktop/solid.ts",
     "./*": "./src/*.ts"
   },
   "imports": {
@@ -66,6 +68,7 @@
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "solid-js": "catalog:",
+    "electron": "42.10.1",
     "typescript": "catalog:",
     "@typescript/native-preview": "catalog:"
   }

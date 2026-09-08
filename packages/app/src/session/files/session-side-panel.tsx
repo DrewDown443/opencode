@@ -48,6 +48,8 @@ import { useSessionLayout } from "@/session/session-layout"
 import { SessionFileBrowserTab, type SessionFileBrowserState } from "@/session/files/session-file-browser-tab"
 import { SessionBrowserPane } from "@/session/browser/pane"
 import type { createSessionBrowser } from "@/session/browser/model"
+import type { SessionExtensions } from "@/extensions/session"
+import { isExtensionTab } from "@/extensions/keys"
 
 type ReviewDiff = FileDiffInfo
 type RenderDiff = FileDiffInfo
@@ -58,6 +60,7 @@ function renderDiff(value: ReviewDiff): value is RenderDiff {
 }
 
 export function SessionSidePanel(props: {
+  extensions: SessionExtensions
   canReview: boolean
   diffs: ReviewDiff[]
   diffsReady: boolean
@@ -81,6 +84,7 @@ export function SessionSidePanel(props: {
   const command = useCommand()
   const sdk = useWorkspaceLocation()
   const { sessionKey, tabs, view, params } = useSessionLayout()
+  const extensions = props.extensions
   const projectDirectory = createMemo(() => sdk().directory)
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
@@ -174,6 +178,7 @@ export function SessionSidePanel(props: {
     hasReview: () => props.canReview,
     fileBrowser: () => true,
     browser: props.browser.attached,
+    extensions: extensions.keys,
   })
   const contextOpen = tabState.contextOpen
   const openFileOpen = tabState.openFileOpen
@@ -225,7 +230,13 @@ export function SessionSidePanel(props: {
   })
   const fileBrowserVisible = createMemo(() => {
     const active = activeTab()
-    return active !== "review" && active !== "context" && active !== "empty" && !isSessionBrowserTab(active)
+    return (
+      active !== "review" &&
+      active !== "context" &&
+      active !== "empty" &&
+      !isSessionBrowserTab(active) &&
+      !isExtensionTab(active)
+    )
   })
   const openFileKeybind = createMemo(() => command.keybindParts("file.open"))
   const closeTabKeybind = createMemo(() => command.keybindParts("file.close"))
@@ -365,6 +376,21 @@ export function SessionSidePanel(props: {
                                   />
                                 }
                               >
+                                <Match when={isExtensionTab(tab)}>
+                                  <Show when={extensions.panels().find((panel) => panel.key === tab)}>
+                                    {(panel) => (
+                                      <SortableTab
+                                        tab={tab}
+                                        index={tabs().all().indexOf(tab)}
+                                        onTabClose={tabs().close}
+                                      >
+                                        {panel().props.icon}
+                                        <span>{panel().props.title}</span>
+                                        <Show when={panel().props.badge}>{panel().props.badge}</Show>
+                                      </SortableTab>
+                                    )}
+                                  </Show>
+                                </Match>
                                 <Match when={isSessionBrowserTab(tab)}>
                                   <Show when={props.browser.tabs().find((item) => sessionBrowserTab(item.id) === tab)}>
                                     {(item) => (
@@ -436,7 +462,7 @@ export function SessionSidePanel(props: {
                           <div class="h-full shrink-0 sticky end-0 z-10 flex items-center justify-center bg-v2-background-bg-base">
                             {/* With only files to add, the plus stays a one-click "Open file" button. */}
                             <Show
-                              when={props.browser.available()}
+                              when={props.browser.available() || extensions.hasActions()}
                               fallback={
                                 <Tooltip
                                   value={
@@ -491,12 +517,15 @@ export function SessionSidePanel(props: {
                                           <span>{language.t("command.file.open")}</span>
                                         </div>
                                       </Menu.Item>
-                                      <Menu.Item onSelect={props.browser.open}>
-                                        <div class="flex items-center gap-2">
-                                          <Icon name="window-cursor" size="small" />
-                                          <span>{language.t("session.tab.browser")}</span>
-                                        </div>
-                                      </Menu.Item>
+                                      <Show when={props.browser.available()}>
+                                        <Menu.Item onSelect={props.browser.open}>
+                                          <div class="flex items-center gap-2">
+                                            <Icon name="window-cursor" size="small" />
+                                            <span>{language.t("session.tab.browser")}</span>
+                                          </div>
+                                        </Menu.Item>
+                                      </Show>
+                                      {extensions.actions()}
                                     </Menu.Content>
                                   </Menu.Portal>
                                 </Menu>
@@ -550,6 +579,19 @@ export function SessionSidePanel(props: {
                             <SessionContextTab />
                           </div>
                         </Tabs.Content>
+                      </Show>
+
+                      <Show when={extensions.panels().find((panel) => panel.key === activeTab())} keyed>
+                        {(panel) => (
+                          <div
+                            role="tabpanel"
+                            data-slot="tabs-content"
+                            class="h-full min-h-0 overflow-hidden flex flex-col"
+                            aria-label={panel.props.title}
+                          >
+                            {panel.render()}
+                          </div>
+                        )}
                       </Show>
 
                       <Show when={props.browser.opened()}>

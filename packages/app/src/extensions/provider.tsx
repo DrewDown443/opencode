@@ -1,0 +1,293 @@
+import {
+  createContext,
+  createEffect,
+  createMemo,
+  createRoot,
+  getOwner,
+  onCleanup,
+  runWithOwner,
+  useContext,
+  type ParentProps,
+  type JSX,
+} from "solid-js"
+import { createStore, produce, type Store, type SetStoreFunction } from "solid-js/store"
+import { Schema } from "effect"
+import type { Context, PanelProps, SessionContext, SlotClaim } from "@opencode/plugin/desktop"
+import { createLifecycle } from "@opencode/plugin/desktop/lifecycle"
+import { client } from "@opencode/plugin/desktop/rpc"
+import { resolveSlots, type Claim, type PlacementKind } from "@opencode/plugin/slots"
+import { usePlatform } from "@/runtime/platform/platform"
+import { useGlobal } from "@/runtime/server/runtime"
+import { ServerConnection } from "@/runtime/server/registry"
+import { useTabs, tabKey } from "@/shell/tabs/tabs"
+import { useCurrentRoute } from "@/shell/state/layout"
+import { useCommand } from "@/shell/commands/command"
+import { useLanguage } from "@/runtime/i18n/language"
+import en from "@/runtime/i18n/en"
+import { persisted, Persist } from "@/runtime/persistence/storage"
+import { extensionTabKey } from "./keys"
+
+export type Contribution = Claim<{ context: Context; when?: () => boolean; render: SlotClaim["render"] }>
+export type RegisteredPanel = {
+  key: string
+  plugin: string
+  session: SessionContext
+  props: PanelProps
+  render: () => JSX.Element
+}
+type PanelHost = { open(id: string): void; close(id: string): void; active(): string | undefined }
+const HostContext = createContext<ReturnType<typeof createHost>>()
+
+export function DesktopExtensionsProvider(props: ParentProps) {
+  const host = createHost()
+  return <HostContext.Provider value={host}>{props.children}</HostContext.Provider>
+}
+
+export function useDesktopExtensions() {
+  const host = useContext(HostContext)
+  if (!host) throw new Error("Desktop extension host is unavailable")
+  return host
+}
+
+export const useOptionalDesktopExtensions = () => useContext(HostContext)
+
+function createHost() {
+  const platform = usePlatform()
+  const global = useGlobal()
+  const tabs = useTabs()
+  const route = useCurrentRoute()
+  const commands = useCommand()
+  const language = useLanguage()
+  const owner = getOwner()
+  const [state, setState] = createStore({
+    claims: [] as Contribution[],
+    panels: [] as RegisteredPanel[],
+    sessions: [] as SessionContext[],
+  })
+  const sessions = new Map<string, SessionContext>()
+  const hosts = new Map<string, PanelHost>()
+  const instances = new Map<string, { definition: object; dispose: () => void }>()
+  const storage = new Map<string, unknown>()
+  const memories = new Map<string, unknown>()
+  const resolved = createMemo(() =>
+    resolveSlots({
+      paths: new Set([
+        "app",
+        "titlebar.actions",
+        "settings.experimental",
+        "session.panel",
+        "session.panel.actions",
+        "session.composer.top",
+      ]),
+      claims: state.claims.filter((claim) => claim.render.when?.() ?? true),
+    }),
+  )
+
+  createEffect(() => {
+    const all = global.servers.list()
+    platform.extensions?.configure(
+      all.map((connection) => ({
+        id: ServerConnection.key(connection),
+        ...connection.http,
+        url: global.ensureServerCtx(connection).sdk.url,
+      })),
+    )
+    const owned = new Set(tabs.store.filter((tab) => tab.type === "session").map(tabKey))
+    Array.from(sessions).forEach(([key, session]) => {
+      if (!owned.has(session.ownerID)) sessions.delete(key)
+    })
+    tabs.store.forEach((tab) => {
+      if (tab.type !== "session") return
+      const connection = all.find((connection) => ServerConnection.key(connection) === tab.server)
+      if (!connection) return
+      const data = global.ensureServerCtx(connection)
+      const server = {
+        id: tab.server,
+        get client() {
+          return data.sdk.api
+        },
+        data: data.data,
+        get compatible() {
+          return !global.servers.health[tab.server]?.incompatible
+        },
+      }
+      Array.from(new Set([tab.sessionId, tab.routeSessionId ?? tab.sessionId])).forEach((id) => {
+        const key = `${tab.server}\n${id}`
+        if (sessions.has(key)) return
+        sessions.set(key, {
+          key,
+          ownerID: tabKey(tab),
+          sessionID: id,
+          server,
+          get creating() {
+            return data.data.session.creating(id)
+          },
+          get location() {
+            return data.data.session.get(id)?.location
+          },
+        })
+      })
+    })
+    setState("sessions", Array.from(sessions.values()))
+  })
+
+  const current = createMemo(() => {
+    const value = route()
+    if (value.type !== "session") return
+    return state.sessions.find((session) => session.server.id === value.server && session.sessionID === value.sessionId)
+  })
+
+  const stateFor = <Value extends object>(id: string, key: string, initial: Value, durable: boolean) => {
+    const cache = durable ? storage : memories
+    const name = `${id}.${key}`
+    const previous = cache.get(name)
+    if (previous) return previous as readonly [Store<Value>, (update: (draft: Value) => void) => void]
+    // Storage decodes JSON objects at the boundary; each plugin owns its value's shape and migrations.
+    const pair = runWithOwner(owner, () =>
+      durable
+        ? persisted(
+            Persist.global(`extension.${name}`),
+            Schema.Record(Schema.String, Schema.Json),
+            Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(initial),
+          )
+        : createStore(initial),
+    ) as unknown as readonly [Store<Value>, SetStoreFunction<Value>]
+    const value = [pair[0], (update: (draft: Value) => void) => pair[1](produce(update))] as const
+    cache.set(name, value)
+    return value
+  }
+
+  const activate = (definition: NonNullable<typeof platform.extensionPlugins>[number]) =>
+    createRoot((dispose) => {
+      const lifecycle = createLifecycle()
+      const id = definition.id
+      let nextClaim = 0
+      const context: Context = {
+        app: { version: platform.version, windowID: platform.windowID, native: !!platform.extensions },
+        lifecycle,
+        sessions: { list: () => state.sessions, current },
+        storage: {
+          store: (key, options) => stateFor(id, key, options.initial, true),
+          memory: (key, options) => stateFor(id, key, options.initial, false),
+        },
+        i18n: {
+          locale: language.locale,
+          t: (key, params) =>
+            Object.hasOwn(en, key) ? language.t(key as Parameters<typeof language.t>[0], params) : key,
+        },
+        commands: {
+          register(values) {
+            return lifecycle.own(
+              createRoot((dispose) => {
+                commands.register(`${id}/${nextClaim++}`, () =>
+                  values().map((command) => ({
+                    id: `${id}.${command.id}`,
+                    title: command.title,
+                    description: command.description,
+                    category: command.group,
+                    disabled: command.enabled === false,
+                    hidden: command.palette === false,
+                    keybind: command.bind,
+                    slash: command.slash,
+                    onSelect: () => {
+                      void command.run()
+                    },
+                  })),
+                )
+                return dispose
+              }),
+            )
+          },
+          dispatch: (commandID) => commands.trigger(`${id}.${commandID}`),
+        },
+        main: {
+          rpc(definition) {
+            const transport = platform.extensions
+            if (!transport) throw new Error("Native desktop extensions are unavailable on this platform")
+            return client(id, definition, transport, lifecycle.signal, lifecycle.own)
+          },
+        },
+        ui: {
+          slot(claim) {
+            const placements = ["append", "prepend", "before", "after", "replace"] as const
+            const kinds = placements.filter((kind) => claim[kind] !== undefined)
+            if (kinds.length !== 1) throw new Error("A slot requires exactly one placement")
+            const kind: PlacementKind = kinds[0]
+            const value: Contribution = {
+              key: `${id}/${nextClaim++}`,
+              plugin: id,
+              placement: { kind, target: claim[kind]! },
+              render: { context, when: claim.when, render: claim.render },
+            }
+            setState("claims", (items) => [...items, value])
+            return lifecycle.own(() => setState("claims", (items) => items.filter((item) => item.key !== value.key)))
+          },
+          panel: {
+            open(localID, session) {
+              const key = extensionTabKey(id, localID)
+              const host = hosts.get(session.key)
+              if (!host || !state.panels.some((panel) => panel.session.key === session.key && panel.key === key))
+                return false
+              host.open(key)
+              return true
+            },
+            close(localID, session) {
+              const key = extensionTabKey(id, localID)
+              const host = hosts.get(session.key)
+              if (!host) return false
+              host.close(key)
+              return true
+            },
+            selected: (localID, session) => hosts.get(session.key)?.active() === extensionTabKey(id, localID),
+          },
+        },
+      }
+      onCleanup(() => {
+        try {
+          lifecycle.dispose()
+        } finally {
+          platform.extensions?.release(id)
+          setState("panels", (items) => items.filter((panel) => panel.plugin !== id))
+        }
+      })
+      const cleanup = definition.setup(context)
+      if (cleanup) lifecycle.own(cleanup)
+      return dispose
+    })
+
+  createEffect(() => {
+    const definitions = platform.extensionPlugins ?? []
+    Array.from(instances).forEach(([id, instance]) => {
+      if (definitions.find((definition) => definition.id === id) === instance.definition) return
+      instance.dispose()
+      instances.delete(id)
+    })
+    definitions.forEach((definition) => {
+      if (instances.has(definition.id)) return
+      instances.set(definition.id, { definition, dispose: activate(definition) })
+    })
+  })
+  onCleanup(() => instances.forEach((instance) => instance.dispose()))
+  return {
+    state,
+    resolved,
+    current,
+    transport: platform.extensions,
+    zoom: () => platform.webviewZoom?.() ?? 1,
+    bind(session: SessionContext, host: PanelHost) {
+      hosts.set(session.key, host)
+      return () => {
+        if (hosts.get(session.key) === host) hosts.delete(session.key)
+      }
+    },
+    register(panel: RegisteredPanel) {
+      if (state.panels.some((item) => item.key === panel.key && item.session.key === panel.session.key))
+        throw new Error(`Duplicate extension panel: ${panel.key}`)
+      setState("panels", (items) => [...items, panel])
+      return () =>
+        setState("panels", (items) =>
+          items.filter((item) => item.key !== panel.key || item.session.key !== panel.session.key),
+        )
+    },
+  }
+}

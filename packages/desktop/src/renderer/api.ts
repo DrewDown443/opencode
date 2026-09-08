@@ -23,6 +23,28 @@ const updaterHandler = (state: UpdaterState) => {
 }
 
 export const api: ElectronAPI = {
+  extensions: {
+    call(input, signal) {
+      if (signal?.aborted) return Promise.reject(signal.reason)
+      return new Promise((resolve, reject) => {
+        const cancel = () => {
+          send("DesktopExtension", {
+            request: { type: "cancel", extensionID: input.extensionID, requestID: input.requestID },
+          })
+          reject(signal?.reason)
+        }
+        signal?.addEventListener("abort", cancel, { once: true })
+        void invoke("DesktopExtension", { request: { type: "call", call: input } })
+          .then(resolve, reject)
+          .finally(() => signal?.removeEventListener("abort", cancel))
+      })
+    },
+    onEvent: (callback) => listen("ExtensionEvent", ({ event }) => callback(event)),
+    surface: (extensionID, surfaceID, layout) =>
+      send("DesktopExtension", { request: { type: "surface", extensionID, surfaceID, layout } }),
+    configure: (servers) => send("DesktopExtension", { request: { type: "servers", servers } }),
+    release: (extensionID) => send("DesktopExtension", { request: { type: "release", extensionID } }),
+  },
   awaitInitialization: () => invoke("AppAwaitInitialization"),
   reconnectService: () => invoke("AppReconnectService"),
   browserPane: {

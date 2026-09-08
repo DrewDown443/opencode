@@ -34,6 +34,7 @@ import { SessionIdentityHeader } from "./session-identity-header"
 import { SessionReviewToggle } from "./header/session-header-actions"
 import { createAnimatedPresence } from "@/runtime/animated-presence"
 import { createSessionBrowser } from "./browser/model"
+import { useExtensionPanels } from "@/extensions/session"
 
 const SessionMobileFiles = lazy(async () => {
   const { SessionMobileFiles } = await import("./files/session-mobile-files")
@@ -49,6 +50,12 @@ export function SessionScreen(props: { session: SessionModel }) {
   })
   const isDesktop = session.isDesktop
   const browser = createSessionBrowser(session)
+  const extensions = useExtensionPanels({
+    serverID: () => server.key,
+    sessionID: session.identity.sessionID,
+    tabs: session.layout.tabs,
+    open: () => session.layout.view().reviewPanel.open(),
+  })
   const screen = createSessionScreenLayout(session)
   const timeline = createSessionTimelineInteraction(session)
   const timelineSearch = createTimelineSearchController({
@@ -288,6 +295,7 @@ export function SessionScreen(props: { session: SessionModel }) {
 
   return (
     <>
+      <Show when={isDesktop()}>{extensions.declarations()}</Show>
       <div class="flex-1 min-h-0 flex flex-col gap-2 px-2 pb-[var(--shell-bottom-inset,8px)] pt-[var(--shell-top-inset,8px)]">
         <div ref={screen.panel.ref} class="relative flex-1 min-h-0 flex flex-col md:flex-row gap-2">
           {/* Keep the control outside panel animations; the terminal's 52px header includes a 1px divider. */}
@@ -379,7 +387,12 @@ export function SessionScreen(props: { session: SessionModel }) {
                         setStore("sideReviewPresent", false)
                       }}
                     >
-                      <SessionDesktopReview review={review} browser={browser} present={store.sideReviewPresent} />
+                      <SessionDesktopReview
+                        review={review}
+                        browser={browser}
+                        extensions={extensions}
+                        present={store.sideReviewPresent}
+                      />
                     </div>
                   </Show>
                 </div>
