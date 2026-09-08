@@ -12,7 +12,7 @@ import { getScrollAcceleration } from "../../util/scroll"
 import { useTuiPaths } from "../../context/runtime"
 import { useConfig } from "../../config"
 import { useLocation } from "../../context/location"
-import { useTheme } from "../../context/theme"
+import { useTheme, useThemes } from "../../context/theme"
 import { SplitBorder } from "../../ui/border"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "../../util/locale"
@@ -44,7 +44,7 @@ export type AutocompleteOption = {
   path?: string
   absolute?: string
   destructive?: { id: string; confirm: string; run: () => void }
-  kind?: "skill"
+  kind?: "skill" | "agent" | "file" | "directory" | "reference" | "resource"
   queueable?: boolean
 }
 
@@ -78,6 +78,7 @@ export function Autocomplete(props: {
   const keymap = Keymap.use()
   const keymapCommands = Keymap.useCommands()
   const theme = useTheme("overlay")
+  const themes = useThemes()
   const dimensions = useTerminalDimensions()
   const frecency = useFrecency()
   const config = useConfig().data
@@ -376,6 +377,7 @@ export function Autocomplete(props: {
           const { filename, part } = createFilePart(item, path.join(result.location.directory, item.path), lineRange)
           return {
             display: Locale.truncateMiddle(filename, width),
+            kind: item.type === "directory" ? "directory" : "file",
             value: filename,
             isDirectory: item.type === "directory",
             path: item.path,
@@ -414,6 +416,7 @@ export function Autocomplete(props: {
     for (const res of data.location.mcp.resource.list(location.current) ?? []) {
       options.push({
         display: Locale.truncateMiddle(res.name, width),
+        kind: "resource",
         // Match the name only; matching the URI caused unrelated fuzzy hits.
         value: res.name,
         description: res.description,
@@ -440,6 +443,7 @@ export function Autocomplete(props: {
       .map(
         (agent): AutocompleteOption => ({
           display: "@" + agent.id,
+          kind: "agent",
           onSelect: () => {
             insertPart(agent.id, {
               type: "agent",
@@ -475,6 +479,7 @@ export function Autocomplete(props: {
       .map(
         (reference): AutocompleteOption => ({
           display: "@" + reference.name,
+          kind: "reference",
           description: ` ${reference.source.type === "git" ? reference.source.repository : reference.source.path}`,
           onSelect: () => {
             insertPart(reference.name, {
@@ -882,6 +887,14 @@ export function Autocomplete(props: {
     return "No matching files, agents, or references"
   })
   const emptyError = createMemo(() => store.visible === "reference" && !files.loading && visibleFiles().failed)
+  const labels = {
+    skill: "Skill",
+    agent: "Agent",
+    file: "File",
+    directory: "Dir",
+    reference: "Reference",
+    resource: "MCP",
+  }
 
   return (
     <box
@@ -915,6 +928,20 @@ export function Autocomplete(props: {
         >
           {(option, index) => {
             const destructive = () => option().destructive
+            const label = () => {
+              const kind = option().kind
+              return kind ? labels[kind] : undefined
+            }
+            const labelColor = () => {
+              if (index === store.selected) return theme.text.action.primary.focused
+              const kind = option().kind
+              const scope = kind === "skill" ? "extmark.skill" : kind === "agent" ? "extmark.agent" : "extmark.file"
+              return themes.currentSyntax().getStyle(scope)?.fg ?? theme.text.subdued
+            }
+            const contentWidth = () => {
+              const text = label()
+              return Math.max(1, position().width - 4 - (text ? stringWidth(text) + 2 : 0))
+            }
             const confirmingAction = () => {
               const action = destructive()
               return action !== undefined && action.id === confirming()
@@ -944,15 +971,27 @@ export function Autocomplete(props: {
                         : theme.text.default
                   }
                   flexShrink={0}
+                  wrapMode="none"
                 >
-                  {confirmingAction() ? destructive()?.confirm : option().display}
+                  {Locale.truncateMiddle(
+                    confirmingAction() ? (destructive()?.confirm ?? "") : option().display,
+                    contentWidth(),
+                  )}
                 </text>
                 <Show when={!confirmingAction() && option().description}>
                   <text
                     fg={index === store.selected ? theme.text.action.primary.focused : theme.text.subdued}
                     wrapMode="none"
+                    flexShrink={1}
+                    minWidth={0}
                   >
                     {" " + option().description?.replace(/\s+/g, " ").trim()}
+                  </text>
+                </Show>
+                <Show when={!confirmingAction() && label()}>
+                  <box flexGrow={1} minWidth={2} />
+                  <text flexShrink={0} fg={labelColor()}>
+                    {label()}
                   </text>
                 </Show>
               </box>
