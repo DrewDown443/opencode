@@ -185,7 +185,7 @@ const projectFork = Effect.fn("SessionProjector.projectFork")(function* (
         .insert(SessionMessageTable)
         .values(
           event.data.messages.map((message, index) => {
-            const { id: _, type, ...data } = Schema.encodeSync(SessionMessage.Info)(message)
+            const { id: _, type, ...data } = message
             return {
               id: SessionMessage.ID.make(`${SessionMessage.ID.fromEvent(event.id)}_${index + 1}`),
               session_id: event.data.sessionID,

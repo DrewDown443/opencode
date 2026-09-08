@@ -518,7 +518,7 @@ export type SessionLogOutput =
             readonly sessionID: Session.ID
             readonly parentID: Session.ID
             readonly boundary: Session.ForkBoundary
-            readonly messages?: ReadonlyArray<SessionMessage.Info> | undefined
+            readonly messages?: ReadonlyArray<SessionMessage.InfoEncoded> | undefined
             readonly instructions?:
               | { readonly [x: string & Brand.Brand<"Instruction.Key">]: string & Brand.Brand<"Instruction.Hash"> }
               | undefined
@@ -715,7 +715,7 @@ export type SessionLogOutput =
             readonly assistantMessageID: SessionMessage.ID
             readonly finish: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
             readonly rawFinish?: string | undefined
-            readonly providerState?: SessionMessage.ProviderState | undefined
+            readonly providerState?: { readonly [x: string]: unknown } | undefined
             readonly cost: number & Brand.Brand<"Money.USD">
             readonly tokens: {
               readonly input: number
@@ -740,7 +740,7 @@ export type SessionLogOutput =
             readonly error: { readonly type: string; readonly message: string; readonly status?: number | undefined }
             readonly finish?: "content-filter" | undefined
             readonly rawFinish?: string | undefined
-            readonly providerState?: SessionMessage.ProviderState | undefined
+            readonly providerState?: { readonly [x: string]: unknown } | undefined
             readonly cost?: (number & Brand.Brand<"Money.USD">) | undefined
             readonly tokens?:
               | {
@@ -779,7 +779,7 @@ export type SessionLogOutput =
             readonly assistantMessageID: SessionMessage.ID
             readonly ordinal: number
             readonly text: string
-            readonly state?: SessionMessage.ProviderState | undefined
+            readonly state?: { readonly [x: string]: unknown } | undefined
           }
         }
       | {
@@ -793,7 +793,7 @@ export type SessionLogOutput =
             readonly sessionID: Session.ID
             readonly assistantMessageID: SessionMessage.ID
             readonly ordinal: number
-            readonly state?: SessionMessage.ProviderState | undefined
+            readonly state?: { readonly [x: string]: unknown } | undefined
           }
         }
       | {
@@ -808,7 +808,7 @@ export type SessionLogOutput =
             readonly assistantMessageID: SessionMessage.ID
             readonly ordinal: number
             readonly text: string
-            readonly state?: SessionMessage.ProviderState | undefined
+            readonly state?: { readonly [x: string]: unknown } | undefined
           }
         }
       | {
@@ -852,7 +852,7 @@ export type SessionLogOutput =
             readonly id: string
             readonly input: { readonly [x: string]: unknown }
             readonly executed: boolean
-            readonly state?: SessionMessage.ProviderState | undefined
+            readonly state?: { readonly [x: string]: unknown } | undefined
           }
         }
       | {
@@ -888,7 +888,7 @@ export type SessionLogOutput =
             ]
             readonly metadata?: { readonly [x: string]: Schema.Json } | undefined
             readonly executed: boolean
-            readonly resultState?: SessionMessage.ProviderState | undefined
+            readonly resultState?: { readonly [x: string]: unknown } | undefined
           }
         }
       | {
@@ -927,7 +927,7 @@ export type SessionLogOutput =
               | undefined
             readonly metadata?: { readonly [x: string]: Schema.Json } | undefined
             readonly executed: boolean
-            readonly resultState?: SessionMessage.ProviderState | undefined
+            readonly resultState?: { readonly [x: string]: unknown } | undefined
           }
         }
       | {
@@ -970,7 +970,7 @@ export type SessionLogOutput =
             readonly sessionID: Session.ID
             readonly reason: "auto" | "manual"
             readonly model?: Model.Ref | undefined
-            readonly providerState?: SessionMessage.ProviderState | undefined
+            readonly providerState?: { readonly [x: string]: unknown } | undefined
             readonly providerContext?:
               | {
                   readonly version: 1

@@ -590,6 +590,9 @@ describe("Session.create", () => {
       const original = yield* session.context(forked.id)
       expect(calls).toEqual([2])
       expect(original).toMatchObject([{ type: "synthetic", text: "Filtered note" }])
+      const event = Array.from(yield* Stream.runCollect(logEvents(session, forked.id)))[0]
+      if (event.type !== "session.forked") return yield* Effect.die(new Error("Fork event not found"))
+      expect(typeof event.data.messages?.[0].time.created).toBe("number")
       expect((yield* session.context(parent.id))[1]).toMatchObject({ text: "Original note" })
       const recorded = yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, forked.id)).get()
       if (!recorded) return yield* Effect.die(new Error("Fork event not found"))

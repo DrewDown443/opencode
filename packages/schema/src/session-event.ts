@@ -175,7 +175,7 @@ export const Forked = Event.durable({
     parentID: SessionID,
     boundary: SessionFork.Boundary,
     /** Frozen plugin-selected history. Omitted for ordinary boundary-based forks. */
-    messages: Schema.Array(SessionMessage.Info).pipe(optional),
+    messages: Schema.Array(SessionMessage.InfoEncoded).pipe(optional),
     instructions: Instruction.Values.pipe(optional),
     instructionEntries: InstructionEntry.Snapshot.pipe(optional),
   },

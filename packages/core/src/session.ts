@@ -354,7 +354,7 @@ const layer = Layer.effect(
           sessionID,
           parentID: parent.id,
           boundary: { ...input.boundary, messageID: boundary.id },
-          messages,
+          messages: messages === undefined ? undefined : Schema.encodeSync(Schema.Array(SessionMessage.Info))(messages),
           ...inherited,
         })
         return yield* result.get(sessionID).pipe(Effect.orDie)

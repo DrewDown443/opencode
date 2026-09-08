@@ -2300,7 +2300,7 @@ export type SessionMessageInfo =
   | SessionMessageAssistant
   | SessionMessageCompaction
 
-export type SessionMessageInfo1 =
+export type SessionMessageInfoEncoded =
   | SessionMessageAgentSelected1
   | SessionMessageModelSelected1
   | SessionMessageLocationSwitched1
@@ -2355,7 +2355,7 @@ export type SessionForked = {
     sessionID: string
     parentID: string
     boundary: SessionForkBoundary
-    messages?: Array<SessionMessageInfo1>
+    messages?: Array<SessionMessageInfoEncoded>
     instructions?: { [x: string]: string }
     instructionEntries?: InstructionEntrySnapshot
   }
