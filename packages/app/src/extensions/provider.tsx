@@ -431,7 +431,7 @@ function createHost() {
     current,
     transport: platform.extensions,
     manager: platform.extensionManager,
-    builtins,
+    builtins: (): readonly Plugin.Definition[] => builtins(),
     failed: (id: string) => setState("failures", id, true),
     zoom: () => platform.webviewZoom?.() ?? 1,
     bind(session: SessionContext, host: PanelHost, services?: SessionServices) {
