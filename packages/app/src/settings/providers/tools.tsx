@@ -1,5 +1,4 @@
-import { Component, For, Show, createEffect, createMemo, createResource } from "solid-js"
-import { createStore } from "solid-js/store"
+import { Component, For, createEffect, createMemo, createResource } from "solid-js"
 import { Icon } from "@opencode/ui/icon"
 import { Switch } from "@opencode/ui/switch"
 import { Tabs } from "@opencode/ui/tabs"
@@ -10,8 +9,6 @@ import { useMcpToggle } from "@/providers/connect/mcp"
 import { pluginLabels } from "@/providers/catalog/plugin"
 import { ExternalLink } from "@/runtime/platform/external-link"
 import { InlineServerSelect } from "@/settings/server-select"
-import { usePlatform } from "@/runtime/platform/platform"
-import { SettingsDesktopExtensions } from "./desktop-extensions"
 import "@/settings/settings.css"
 
 interface McpRowItem {
@@ -23,10 +20,8 @@ interface PluginRowItem {
   name: string
 }
 
-export const SettingsExtensions: Component = () => {
+export const SettingsTools: Component = () => {
   const language = useLanguage()
-  const platform = usePlatform()
-  const [state, setState] = createStore({ tab: platform.extensionManager ? "desktop" : "mcps" })
   const serverSdk = useServerSDK()
   const data = useData()
   const [mcpList, { refetch: refetchMcp }] = createResource(
@@ -65,40 +60,20 @@ export const SettingsExtensions: Component = () => {
       <div class="settings-tab-header">
         <div class="settings-tab-header-row">
           <div class="flex flex-col gap-1">
-            <h2 class="settings-tab-title">{language.t("settings.tab.extensions")}</h2>
-            <Show when={state.tab !== "desktop"}>
-              <span class="text-11-regular text-v2-text-text-muted">
-                {language.t("settings.extensions.description")}
-              </span>
-            </Show>
+            <h2 class="settings-tab-title">{language.t("settings.tab.tools")}</h2>
+            <span class="text-11-regular text-v2-text-text-muted">{language.t("settings.tools.description")}</span>
           </div>
-          <Show when={state.tab !== "desktop"}>
-            <InlineServerSelect />
-          </Show>
+          <InlineServerSelect />
         </div>
       </div>
 
       <div class="settings-tab-body">
-        <Tabs
-          variant="pill"
-          value={state.tab}
-          onChange={(tab) => setState("tab", tab)}
-          class="settings-extensions-tabs"
-        >
+        <Tabs variant="pill" defaultValue="mcps" class="settings-extensions-tabs">
           <Tabs.List>
-            <Show when={platform.extensionManager}>
-              <Tabs.Trigger value="desktop">{language.t("settings.desktopExtensions.tab")}</Tabs.Trigger>
-            </Show>
             <Tabs.Trigger value="mcps">{language.t("settings.extensions.tab.mcps")}</Tabs.Trigger>
             <Tabs.Trigger value="plugins">{language.t("status.popover.tab.plugins")}</Tabs.Trigger>
             <Tabs.Trigger value="skills">{language.t("settings.extensions.tab.skills")}</Tabs.Trigger>
           </Tabs.List>
-
-          <Show when={platform.extensionManager}>
-            <Tabs.Content value="desktop">
-              <SettingsDesktopExtensions />
-            </Tabs.Content>
-          </Show>
 
           <Tabs.Content value="mcps">
             <div class="settings-section">

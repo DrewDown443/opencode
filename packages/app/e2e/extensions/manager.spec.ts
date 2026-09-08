@@ -117,12 +117,43 @@ for (const direction of ["ltr", "rtl"] as const)
       await target.goto("/e2e/extensions/manager-fixture.html")
       await target.getByTestId("settings-screen").getByRole("tab", { name: "Extensions", exact: true }).click()
       await expect(target.getByRole("heading", { name: "Install extensions", exact: true })).toBeVisible()
+      const settings = target.getByTestId("settings-screen")
+      const navigation = settings.locator(".settings-nav")
+      await expect(
+        navigation
+          .locator('[data-slot="settings-nav-group"]')
+          .filter({ has: target.getByRole("tab", { name: "Extensions", exact: true }) })
+          .getByRole("tab"),
+      ).toHaveText(["Extensions", "Experimental"])
+      await expect(
+        navigation
+          .locator('[data-slot="settings-nav-group"]')
+          .filter({ has: target.getByRole("tab", { name: "Tools", exact: true }) })
+          .getByRole("tab"),
+      ).toHaveText(["Providers", "Models", "Tools"])
+      await expect(settings.getByRole("tab", { name: "Desktop", exact: true })).toHaveCount(0)
+      await expect(settings.getByRole("tab", { name: "MCPs", exact: true })).toHaveCount(0)
+      await settings.getByRole("tab", { name: "Tools", exact: true }).click()
+      await expect(settings.getByRole("heading", { name: "Tools", exact: true })).toBeVisible()
+      await expect(settings.getByRole("tab", { name: "MCPs", exact: true })).toBeVisible()
+      await expect(settings.getByRole("tab", { name: "Plugins", exact: true })).toBeVisible()
+      await expect(settings.getByRole("tab", { name: "Skills", exact: true })).toBeVisible()
+      await expect(settings.getByRole("heading", { name: "Install extensions", exact: true })).toHaveCount(0)
+      await settings.getByRole("tab", { name: "Extensions", exact: true }).click()
       await target.evaluate((direction) => {
         document.documentElement.dir = direction
       }, direction)
     }
     try {
       await open(page)
+      await page.setViewportSize({ width: 640, height: 900 })
+      await page.getByRole("button", { name: "Extensions", exact: true }).click()
+      await page.getByRole("menuitemradio", { name: "Tools", exact: true }).click()
+      await expect(page.getByRole("heading", { name: "Tools", exact: true })).toBeVisible()
+      await page.getByRole("button", { name: "Tools", exact: true }).click()
+      await page.getByRole("menuitemradio", { name: "Extensions", exact: true }).click()
+      await expect(page.getByRole("heading", { name: "Install extensions", exact: true })).toBeVisible()
+      await page.setViewportSize({ width: 1280, height: 720 })
       await expect(page.locator('[data-component="desktop-extension-manager"]').getByRole("status")).toHaveCount(0)
       await page.screenshot({ path: info.outputPath("extensions-manager-empty.png") })
       await page

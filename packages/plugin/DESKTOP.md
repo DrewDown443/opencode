@@ -1,6 +1,6 @@
 # Desktop extensions — exploratory API
 
-This draft adds a renderer entrypoint at `@opencode/plugin/desktop` and a trusted main entrypoint at `@opencode/plugin/desktop/main`. Built-in registrations and installed `.ocdx` archives run through the same contracts. Settings → Extensions → Desktop ports the OCDX manager: browse/drop archives, install from a URL, enable/disable, and reload across open windows.
+This draft adds a renderer entrypoint at `@opencode/plugin/desktop` and a trusted main entrypoint at `@opencode/plugin/desktop/main`. Built-in registrations and installed `.ocdx` archives run through the same contracts. Settings → Extensions, grouped with Experimental, ports the OCDX manager: browse/drop archives, install from a URL, enable/disable, and reload across open windows. Server MCPs, plugins, and skills live under Settings → Tools.
 
 ## Contributions
 

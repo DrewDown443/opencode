@@ -2,7 +2,9 @@ import { DESKTOP_NATIVE_ENGLISH } from "./desktop-native"
 
 export const dict = {
   ...DESKTOP_NATIVE_ENGLISH,
-  "settings.desktopExtensions.tab": "Desktop",
+  "settings.tab.tools": "Tools",
+  "settings.tools.description": "Manage tools available on this server",
+  "project.settings.tools.description": "View tools available to this project",
   "settings.desktopExtensions.installTitle": "Install extensions",
   "settings.desktopExtensions.drop": "Drop extension files",
   "settings.desktopExtensions.choose": "Choose one or more .ocdx archives from your computer",
