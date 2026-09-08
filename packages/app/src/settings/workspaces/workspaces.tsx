@@ -335,7 +335,7 @@ export const SettingsWorkspaces: Component<{ activeDirectory?: string; resetProj
       <div class="settings-tab-body settings-workspaces">
         <Show when={filtered().length > 0}>
           <div class="settings-workspaces-toolbar">
-            <span class="settings-workspaces-count">
+            <span class="settings-section-title">
               {language.plural("settings.workspaces.count", filtered().length)}
             </span>
             <div class="settings-workspaces-toolbar-actions">

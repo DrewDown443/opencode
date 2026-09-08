@@ -115,7 +115,7 @@ export const SettingsProjects: Component = () => {
             </div>
           }
         >
-          <div class="flex flex-col gap-8 w-full">
+          <div class="settings-section-stack">
             <Show
               when={groups().length > 0}
               fallback={

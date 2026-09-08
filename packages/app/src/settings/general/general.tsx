@@ -505,7 +505,7 @@ export const SettingsGeneral: Component<{
           </div>
         </div>
       </div>
-      <div class="settings-tab-body">
+      <div class="settings-tab-body settings-tab-body--sectioned">
         <GeneralSection />
 
         <section class="settings-section" aria-label={language.t("settings.timeline.title")}>

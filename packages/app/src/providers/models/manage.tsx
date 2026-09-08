@@ -149,7 +149,7 @@ export const DialogManageModels: Component = () => {
                             </span>
                             <span class="settings-models-group-label">
                               <ProviderIcon id={group.category} width={16} height={16} class="shrink-0" />
-                              <span class="settings-section-title">{group.items[0].provider.name}</span>
+                              <span class="settings-models-group-title">{group.items[0].provider.name}</span>
                             </span>
                           </button>
                           <Switch
