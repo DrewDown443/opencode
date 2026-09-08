@@ -1,29 +1,56 @@
-import { createEffect, createMemo, createSignal, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import type { RegisteredPanel } from "./provider"
 
-/** Related instances can retain a shared sidebar while switching their document content. */
+/** Grouped content stays mounted while any declaration in its group is available. */
 export function ExtensionPanelContent(props: { panels: readonly RegisteredPanel[]; active: string | undefined }) {
   const selected = createMemo(() => props.panels.find((panel) => panel.key === props.active))
-  const [content, setContent] = createSignal<{ key: string; render: RegisteredPanel["render"] }>()
-  // Resolve after declarations update. Preview replacement removes and inserts
-  // panel declarations in the same render, and must retain the shared content.
-  createEffect(() => {
+  const groups = createMemo(() => Array.from(new Set(props.panels.filter((panel) => panel.props.group).map(groupKey))))
+  const single = createMemo(() => {
     const panel = selected()
-    const key = panel && `${panel.session.key}/${panel.plugin}/${panel.props.group ?? panel.key}`
-    setContent((previous) => previous?.key === key ? previous : panel && { key: key!, render: panel.render })
+    return panel && !panel.props.group ? panel : undefined
   })
   return (
-    <Show when={content()} keyed>
-      {(content) => (
-        <div
-          role="tabpanel"
-          data-slot="tabs-content"
-          class="h-full min-h-0 overflow-hidden flex flex-col"
-          aria-label={selected()?.props.title}
-        >
-          {content.render()}
-        </div>
-      )}
-    </Show>
+    <>
+      <For each={groups()}>
+        {(key) => {
+          const [mounted, setMounted] = createSignal(false)
+          const active = () => !!selected() && groupKey(selected()!) === key
+          const declaration = props.panels.find((panel) => groupKey(panel) === key)!
+          createEffect(() => {
+            if (active()) setMounted(true)
+          })
+          return (
+            <Show when={mounted()}>
+              <div
+                role="tabpanel"
+                data-slot="tabs-content"
+                class="h-full min-h-0 overflow-hidden flex flex-col"
+                classList={{ hidden: !active() }}
+                inert={!active()}
+                aria-label={selected()?.props.title}
+              >
+                {declaration.render()}
+              </div>
+            </Show>
+          )
+        }}
+      </For>
+      <Show when={single()} keyed>
+        {(panel) => (
+          <div
+            role="tabpanel"
+            data-slot="tabs-content"
+            class="h-full min-h-0 overflow-hidden flex flex-col"
+            aria-label={panel.props.title}
+          >
+            {panel.render()}
+          </div>
+        )}
+      </Show>
+    </>
   )
+}
+
+function groupKey(panel: RegisteredPanel) {
+  return `${panel.session.key}/${panel.plugin}/${panel.props.group ?? panel.key}`
 }
