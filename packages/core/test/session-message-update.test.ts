@@ -2,49 +2,49 @@ import { describe, expect } from "bun:test"
 import path from "path"
 import { Effect, Layer, Stream } from "effect"
 import { asc, eq } from "drizzle-orm"
-import { Agent } from "@opencode-ai/core/agent"
-import { Bus } from "@opencode-ai/core/bus"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { EventTable } from "@opencode-ai/core/event/sql"
-import { Location } from "@opencode-ai/core/location"
-import { Model } from "@opencode-ai/core/model"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { Provider } from "@opencode-ai/core/provider"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { Money } from "@opencode-ai/schema/money"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { tmpdir } from "./fixture/tmpdir"
+import { Agent } from "@opencode/core/agent"
+import { Bus } from "@opencode/core/bus"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { EventTable } from "@opencode/core/event/sql"
+import { Location } from "@opencode/core/location"
+import { Model } from "@opencode/core/model"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { Provider } from "@opencode/core/provider"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionExecution } from "@opencode/core/session/execution"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionStore } from "@opencode/core/session/store"
+import { Money } from "@opencode/schema/money"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { tmpdirScoped } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
-import { globalProjectLayer } from "./lib/project"
+import { globalProjectNode } from "./lib/project"
 
 const active = new Set<Session.ID>()
 const it = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([Database.node, Bus.node, SessionProjector.node, SessionStore.node, Session.node]),
     [
-      [Bus.node, Bus.configured({ persist: true })],
-      [Project.node, globalProjectLayer],
-      [
-        SessionExecution.node,
+      Bus.node.replace(Bus.configured({ persist: true })),
+      Project.node.replace(globalProjectNode),
+      SessionExecution.node.replace(
         Layer.succeed(
           SessionExecution.Service,
           SessionExecution.Service.of({
             active: Effect.sync(() => active),
+            isActive: (sessionID) => Effect.sync(() => active.has(sessionID)),
             resume: () => Effect.void,
             wake: () => Effect.void,
             interrupt: () => Effect.succeed(false),
             awaitIdle: () => Effect.void,
           }),
         ),
-      ],
+      ),
     ],
   ),
 )
@@ -149,15 +149,12 @@ describe("Session.updateMessage", () => {
         type: event.type,
         data: event.data,
       }))
-      const tmp = yield* Effect.acquireRelease(
-        Effect.promise(() => tmpdir()),
-        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-      )
+      const tmp = yield* tmpdirScoped()
       const target = AppNodeBuilder.build(
         LayerNode.group([Database.node, Bus.node, SessionProjector.node, SessionStore.node]),
         [
-          [Database.node, Database.configured({ path: path.join(tmp.path, "target.sqlite") })],
-          [Bus.node, Bus.configured({ persist: true })],
+          Database.node.replace(Database.configured({ path: path.join(tmp.path, "target.sqlite") })),
+          Bus.node.replace(Bus.configured({ persist: true })),
         ],
       )
 
@@ -215,16 +212,53 @@ describe("Session.updateMessage", () => {
       )
 
       yield* complete(bus, created.id, messageID)
-      const unfinished = SessionMessage.AssistantTool.make({
-        type: "tool",
-        id: "call_unfinished",
-        name: "read",
-        state: { status: "streaming", input: "" },
-        time: { created: created.time.created },
-      })
-      expect(
-        yield* Effect.flip(session.updateMessage({ sessionID: created.id, messageID, content: [unfinished] })),
-      ).toEqual(new Session.MessageToolIncompleteError({ sessionID: created.id, messageID }))
+      yield* Effect.forEach(
+        [
+          SessionMessage.ToolStateStreaming.make({ status: "streaming", input: "" }),
+          SessionMessage.ToolStateRunning.make({ status: "running", input: {}, metadata: {} }),
+        ],
+        Effect.fnUntraced(function* (state) {
+          const unfinished = SessionMessage.AssistantTool.make({
+            type: "tool",
+            id: "call_unfinished",
+            name: "read",
+            state,
+            time: { created: created.time.created },
+          })
+          expect(
+            yield* Effect.flip(session.updateMessage({ sessionID: created.id, messageID, content: [unfinished] })),
+          ).toEqual(new Session.MessageToolIncompleteError({ sessionID: created.id, messageID }))
+        }),
+      )
+    }),
+  )
+
+  it.effect("accepts completed and failed tool content", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const bus = yield* Bus.Service
+      const created = yield* session.create({ location })
+      const messageID = SessionMessage.ID.create()
+      yield* start(bus, created.id, messageID)
+      yield* complete(bus, created.id, messageID)
+      const content = [
+        SessionMessage.ToolStateCompleted.make({
+          status: "completed",
+          input: {},
+          content: [{ type: "text", text: "result" }],
+        }),
+        SessionMessage.ToolStateError.make({ status: "error", input: {}, error: { type: "tool", message: "failed" } }),
+      ].map((state) =>
+        SessionMessage.AssistantTool.make({
+          type: "tool",
+          id: `call_${state.status}`,
+          name: "read",
+          state,
+          time: { created: created.time.created },
+        }),
+      )
+
+      expect((yield* session.updateMessage({ sessionID: created.id, messageID, content })).content).toEqual(content)
     }),
   )
 

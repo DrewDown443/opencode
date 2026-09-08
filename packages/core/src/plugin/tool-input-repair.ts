@@ -1,8 +1,8 @@
 export * as ToolInputRepairPlugin from "./tool-input-repair.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
-import type { ToolDraft } from "@opencode-ai/plugin/effect/tool"
-import { CodeMode } from "@opencode-ai/codemode"
+import { define } from "@opencode/plugin/effect/plugin"
+import type { ToolEditor } from "@opencode/plugin/effect/tool"
+import { CodeMode } from "@opencode/codemode"
 import { Effect, JsonSchema, Option, Predicate, Schema } from "effect"
 import { definition } from "../tool/runtime.js"
 
@@ -24,7 +24,7 @@ const executeSchema = Schema.toJsonSchemaDocument(CodeMode.Input).schema
 export const Plugin = define({
   id: "opencode.tool.input.repair",
   effect: Effect.fn(function* (ctx) {
-    let get: ToolDraft["get"] = () => undefined
+    let get: ToolEditor["get"] = () => undefined
     yield* ctx.tool.transform((draft) => {
       // The draft sees later tool transforms too; reload replaces this lookup.
       get = draft.get
@@ -51,14 +51,16 @@ function repair(value: unknown, schema: JsonSchema.JsonSchema, root: JsonSchema.
         ? root.definitions
         : undefined
     if (!Predicate.isObject(definitions)) return value
-    const target = JsonSchema.resolve$ref(
-      schema.$ref,
-      Object.fromEntries(
-        Object.entries(definitions).filter((entry): entry is [string, JsonSchema.JsonSchema] =>
-          Predicate.isObject(entry[1]),
-        ),
+    const target = Object.fromEntries(
+      Object.entries(definitions).filter((entry): entry is [string, JsonSchema.JsonSchema] =>
+        Predicate.isObject(entry[1]),
       ),
-    )
+    )[
+      schema.$ref
+        .slice(schema.$ref.lastIndexOf("/") + 1)
+        .replaceAll("~1", "/")
+        .replaceAll("~0", "~")
+    ]
     return target ? repair(value, target, root, depth + 1) : value
   }
 

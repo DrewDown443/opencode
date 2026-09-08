@@ -3,40 +3,43 @@ import { $ } from "bun"
 import fs from "fs/promises"
 import path from "path"
 import { DateTime, Effect, Layer, Stream } from "effect"
-import { Money } from "@opencode-ai/schema/money"
-import { Shell } from "@opencode-ai/schema/shell"
-import { Skill } from "@opencode-ai/schema/skill"
-import { Agent } from "@opencode-ai/core/agent"
+import { TestClock } from "effect/testing"
+import { Money } from "@opencode/schema/money"
+import { Shell } from "@opencode/schema/shell"
+import { Skill } from "@opencode/schema/skill"
+import { Agent } from "@opencode/core/agent"
 import { asc, eq } from "drizzle-orm"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Hash } from "@opencode-ai/util/hash"
-import { Bus } from "@opencode-ai/core/bus"
-import { EventTable } from "@opencode-ai/core/event/sql"
-import { Instructions } from "@opencode-ai/core/instructions/index"
-import { Location } from "@opencode-ai/core/location"
-import { Model } from "@opencode-ai/core/model"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { Provider } from "@opencode-ai/core/provider"
-import { AbsolutePath, RelativePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
-import { SessionInbox } from "@opencode-ai/core/session/inbox"
-import { InstructionEntry } from "@opencode-ai/core/session/instruction-entry"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionTable } from "@opencode-ai/core/session/sql"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { SessionTransfer } from "@opencode-ai/core/session/transfer"
-import { Workspace } from "@opencode-ai/core/workspace"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Hash } from "@opencode/util/hash"
+import { Bus } from "@opencode/core/bus"
+import { EventTable } from "@opencode/core/event/sql"
+import { Instructions } from "@opencode/core/instructions/index"
+import { Location } from "@opencode/core/location"
+import { Model } from "@opencode/core/model"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { Provider } from "@opencode/core/provider"
+import { AbsolutePath, RelativePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionExecution } from "@opencode/core/session/execution"
+import { SessionInbox } from "@opencode/core/session/inbox"
+import { InstructionEntry } from "@opencode/core/session/instruction-entry"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionTable } from "@opencode/core/session/sql"
+import { SessionStore } from "@opencode/core/session/store"
+import { SessionTransfer } from "@opencode/core/session/transfer"
+import { Workspace } from "@opencode/core/workspace"
+import { Expected } from "./lib/session-message"
 import { testEffect } from "./lib/effect"
-import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
-import { promptLocationLayer } from "./fixture/prompt-location"
-import { globalProjectLayer } from "./lib/project"
-import { tmpdir } from "./fixture/tmpdir"
+import { LocationServiceMap } from "@opencode/core/location-service-map"
+import { offlineModels } from "./fixture/models"
+import { promptLocationNode } from "./fixture/prompt-location"
+import { globalProjectNode } from "./lib/project"
+import { tmpdirScoped } from "./fixture/tmpdir"
 
 const it = testEffect(
   AppNodeBuilder.build(
@@ -50,10 +53,10 @@ const it = testEffect(
       InstructionEntry.node,
     ]),
     [
-      [Bus.node, Bus.configured({ persist: true })],
-      [Project.node, globalProjectLayer],
-      [LocationServiceMap.node, promptLocationLayer],
-      [SessionExecution.node, SessionExecution.noopLayer],
+      Bus.node.replace(Bus.configured({ persist: true })),
+      Project.node.replace(globalProjectNode),
+      LocationServiceMap.node.replace(promptLocationNode),
+      SessionExecution.node.replace(SessionExecution.noopLayer),
     ],
   ),
 )
@@ -61,8 +64,20 @@ const liveIt = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([Database.node, Bus.node, Project.node, SessionProjector.node, SessionStore.node, Session.node]),
     [
-      [Bus.node, Bus.configured({ persist: true })],
-      [SessionExecution.node, SessionExecution.noopLayer],
+      Bus.node.replace(Bus.configured({ persist: true })),
+      SessionExecution.node.replace(SessionExecution.noopLayer),
+      offlineModels,
+    ],
+  ),
+)
+const projectIt = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([Database.node, Bus.node, Project.node, SessionProjector.node, SessionStore.node, Session.node]),
+    [
+      Bus.node.replace(Bus.configured({ persist: true })),
+      // Project adoption needs plain-prompt admission, not live plugin/provider startup.
+      LocationServiceMap.node.replace(promptLocationNode),
+      SessionExecution.node.replace(SessionExecution.noopLayer),
     ],
   ),
 )
@@ -84,14 +99,38 @@ const assertCreateInputTypes = (session: Session.Interface) => {
 void assertCreateInputTypes
 
 function withTmp<A, E, R>(f: (directory: string) => Effect.Effect<A, E, R>) {
-  return Effect.acquireRelease(
-    Effect.promise(() => tmpdir()),
-    (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-  ).pipe(Effect.flatMap((tmp) => f(tmp.path)))
+  return tmpdirScoped().pipe(Effect.flatMap((tmp) => f(tmp.path)))
 }
 
 describe("Session.create", () => {
-  liveIt.live("follows the directory's project identity established after creation", () =>
+  liveIt.live("preserves the project canonical directory when creating a session in another clone", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        const main = AbsolutePath.make(path.join(directory, "repo"))
+        const clone = AbsolutePath.make(path.join(directory, "other-clone"))
+        yield* Effect.promise(async () => {
+          await $`git init -q ${main}`.cwd(directory)
+          await $`git -c user.name=Test -c user.email=test@opencode.test -c commit.gpgsign=false commit --allow-empty -qm root`
+            .cwd(main)
+            .quiet()
+          await $`git remote add origin git@github.com:owner/repo.git`.cwd(main)
+          await $`git clone --no-hardlinks ${main} ${clone}`.quiet()
+          await $`git remote set-url origin https://github.com/owner/repo.git`.cwd(clone)
+        })
+        const sessions = yield* Session.Service
+        const projects = yield* Project.Service
+        const first = yield* sessions.create({ location: Location.Ref.make({ directory: main }) })
+        const second = yield* sessions.create({ location: Location.Ref.make({ directory: clone }) })
+
+        expect(second.projectID).toBe(first.projectID)
+        expect((yield* projects.list()).find((project) => project.id === first.projectID)?.canonical).toBe(main)
+        expect((yield* sessions.get(first.id)).location.directory).toBe(main)
+        expect((yield* sessions.get(second.id)).location.directory).toBe(clone)
+      }),
+    ),
+  )
+
+  projectIt.live("follows the directory's project identity established after creation", () =>
     withTmp((directory) =>
       Effect.gen(function* () {
         const session = yield* Session.Service
@@ -186,7 +225,7 @@ describe("Session.create", () => {
           "session.inbox.enqueued",
         ])
         expect(yield* session.messages({ sessionID: created.id })).toMatchObject([
-          { id: expect.any(String), type: "user", text: "Preserved history" },
+          { id: expect.any(String), ...Expected.user("Preserved history") },
         ])
         expect(yield* SessionInbox.find(db, pending.id)).toMatchObject({ payload: { text: "Preserved inbox" } })
         expect(
@@ -312,6 +351,40 @@ describe("Session.create", () => {
           model,
         }),
       ).toMatchObject({ location: { directory: location.directory, workspaceID }, agent: "build", model })
+    }),
+  )
+
+  it.effect("stores creation metadata and inherits it through children and forks", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const bus = yield* Bus.Service
+      const { db } = yield* Database.Service
+      const metadata = { thread: "C123/1699999999.123", labels: ["support", 2] }
+
+      const created = yield* session.create({ location, metadata })
+      expect(created.metadata).toEqual(metadata)
+      // The annotations are a durable creation fact, not just projected state.
+      expect(
+        yield* db
+          .select({ data: EventTable.data })
+          .from(EventTable)
+          .where(eq(EventTable.aggregate_id, created.id))
+          .get()
+          .pipe(Effect.orDie),
+      ).toMatchObject({ data: { metadata } })
+
+      const inherited = yield* session.create({ parentID: created.id })
+      expect(inherited.metadata).toEqual(metadata)
+      const overridden = yield* session.create({ parentID: created.id, metadata: { thread: "other" } })
+      expect(overridden.metadata).toEqual({ thread: "other" })
+
+      yield* session.prompt({ sessionID: created.id, text: "Fork context", resume: false })
+      yield* SessionInbox.promote(db, bus, created.id, "steer")
+      const forked = yield* session.fork({ sessionID: created.id, boundary: { type: "through" } })
+      expect(forked.metadata).toEqual(metadata)
+
+      // Absent stays absent: no empty-object normalization.
+      expect((yield* session.create({ location })).metadata).toBeUndefined()
     }),
   )
 
@@ -449,10 +522,7 @@ describe("Session.create", () => {
 
       expect(forked).toMatchObject({ title: "Parent (fork #1)", fork: { sessionID: parent.id } })
       expect(forked.parentID).toBeUndefined()
-      expect(forkContext).toMatchObject([
-        { type: "user", text: "First" },
-        { type: "synthetic", text: "parent note" },
-      ])
+      expect(forkContext).toMatchObject([Expected.user("First"), { type: "synthetic", text: "parent note" }])
       expect(forkContext.map((message) => message.id)).not.toEqual(parentContext.map((message) => message.id))
       expect(history).toHaveLength(1)
       expect(history[0]).toMatchObject({
@@ -637,13 +707,10 @@ describe("Session.create", () => {
       const forked = yield* session.fork({ sessionID: parent.id, boundary: { type: "through" } })
 
       expect(yield* session.context(parent.id)).toMatchObject([
-        { type: "user", text: "Run both tools" },
-        {
-          type: "assistant",
-          content: [{ type: "tool", id: "call_running", state: { status: "running" } }],
-        },
+        Expected.user("Run both tools"),
+        Expected.assistant({}, [{ type: "tool", id: "call_running", state: { status: "running" } }]),
       ])
-      expect(yield* session.context(forked.id)).toMatchObject([{ type: "user", text: "Run both tools" }])
+      expect(yield* session.context(forked.id)).toMatchObject([Expected.user("Run both tools")])
     }),
   )
 
@@ -670,10 +737,10 @@ describe("Session.create", () => {
       const running = yield* session.fork({ sessionID: parent.id, boundary: { type: "through" } })
 
       expect(yield* session.context(parent.id)).toMatchObject([
-        { type: "user", text: "Run a shell" },
+        Expected.user("Run a shell"),
         { type: "shell", command: "sleep 10", status: "running" },
       ])
-      expect(yield* session.context(running.id)).toMatchObject([{ type: "user", text: "Run a shell" }])
+      expect(yield* session.context(running.id)).toMatchObject([Expected.user("Run a shell")])
 
       yield* bus.publish(SessionEvent.Shell.Ended, {
         sessionID: parent.id,
@@ -682,9 +749,9 @@ describe("Session.create", () => {
       })
       const completed = yield* session.fork({ sessionID: parent.id, boundary: { type: "through" } })
 
-      expect(yield* session.context(running.id)).toMatchObject([{ type: "user", text: "Run a shell" }])
+      expect(yield* session.context(running.id)).toMatchObject([Expected.user("Run a shell")])
       expect(yield* session.context(completed.id)).toMatchObject([
-        { type: "user", text: "Run a shell" },
+        Expected.user("Run a shell"),
         { type: "shell", command: "sleep 10", status: "exited", output: { output: "complete" } },
       ])
     }),
@@ -760,8 +827,8 @@ describe("Session.create", () => {
       expect(yield* session.context(beforeFirst.id)).toEqual([])
       expect(beforeFirst).toMatchObject({ cost: 0, tokens: { input: 0, output: 0, reasoning: 0 } })
       expect(yield* session.context(complete.id)).toMatchObject([
-        { type: "user", text: "First" },
-        { type: "user", text: "Second" },
+        Expected.user("First"),
+        Expected.user("Second"),
         { type: "assistant", finish: "stop" },
       ])
       expect(complete).toMatchObject({
@@ -900,15 +967,12 @@ describe("Session.create", () => {
         data: event.data,
       }))
 
-      const tmp = yield* Effect.acquireRelease(
-        Effect.promise(() => tmpdir()),
-        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-      )
+      const tmp = yield* tmpdirScoped()
       const targetLayer = AppNodeBuilder.build(
         LayerNode.group([Database.node, Bus.node, SessionProjector.node, SessionStore.node]),
         [
-          [Database.node, Database.configured({ path: path.join(tmp.path, "target.sqlite") })],
-          [Bus.node, Bus.configured({ persist: true })],
+          Database.node.replace(Database.configured({ path: path.join(tmp.path, "target.sqlite") })),
+          Bus.node.replace(Bus.configured({ persist: true })),
         ],
       )
 
@@ -936,7 +1000,7 @@ describe("Session.create", () => {
         yield* Effect.forEach(serialized.slice(2), (event) => bus.replay(event), { discard: true })
         expect(yield* SessionInbox.find(db, admitted.id)).toBeUndefined()
         expect(yield* store.context(created.id)).toMatchObject([
-          { id: admitted.id, type: "user", text: "Replay lifecycle" },
+          { id: admitted.id, ...Expected.user("Replay lifecycle") },
         ])
         expect(
           (yield* db
@@ -1160,9 +1224,7 @@ describe("SessionTransfer", () => {
         recent: "pending",
       })
 
-      expect((yield* transfer.export({ sessionID: source.id })).messages).toMatchObject([
-        { type: "user", text: "Settled" },
-      ])
+      expect((yield* transfer.export({ sessionID: source.id })).messages).toMatchObject([Expected.user("Settled")])
     }),
   )
 
@@ -1181,6 +1243,7 @@ describe("SessionTransfer", () => {
       const runningCompactionID = SessionMessage.ID.create()
       const completedCompactionID = SessionMessage.ID.create()
       const model = Model.Ref.make({ id: Model.ID.make("model"), providerID: Provider.ID.make("provider") })
+      const providerState = { responseId: "summary-response" }
 
       yield* transfer.import({
         data: {
@@ -1235,6 +1298,8 @@ describe("SessionTransfer", () => {
               type: "compaction",
               status: "completed",
               reason: "manual",
+              model,
+              providerState,
               summary: "summary",
               recent: "recent",
               time: { created: DateTime.makeUnsafe(9) },
@@ -1251,6 +1316,11 @@ describe("SessionTransfer", () => {
         completedCompactionID,
       ])
       expect(yield* Bus.latestSequence(db, sessionID)).toBe(4)
+      expect((yield* transfer.export({ sessionID })).messages.at(-1)).toMatchObject({ model, providerState })
+      expect((yield* transfer.export({ sessionID, sanitize: true })).messages.at(-1)).toMatchObject({
+        model,
+        providerState: { redacted: `compaction-provider-state:${completedCompactionID}` },
+      })
     }),
   )
 
@@ -1260,10 +1330,11 @@ describe("SessionTransfer", () => {
       const transfer = yield* SessionTransfer.Service
       const bus = yield* Bus.Service
       const { db } = yield* Database.Service
-      const template = yield* session.create({ location, title: "Exported" })
+      const template = yield* session.create({ location, title: "Exported", metadata: { channel: "C123" } })
       const sessionID = Session.ID.create()
       const sourceMessageID = SessionMessage.ID.create()
       const errorMessageID = SessionMessage.ID.create()
+      yield* TestClock.setTime(1_000)
 
       const imported = yield* transfer.import({
         data: {
@@ -1272,6 +1343,7 @@ describe("SessionTransfer", () => {
             id: sessionID,
             time: {
               ...template.time,
+              updated: DateTime.makeUnsafe(100),
               idle: DateTime.makeUnsafe(200),
               viewed: DateTime.makeUnsafe(150),
             },
@@ -1304,10 +1376,14 @@ describe("SessionTransfer", () => {
       })
       const messages = yield* session.messages({ sessionID, order: "asc" })
 
-      expect(imported).toMatchObject({ id: sessionID, title: "Exported", location })
-      expect(imported.time).toMatchObject({ idle: DateTime.makeUnsafe(200), viewed: DateTime.makeUnsafe(150) })
+      expect(imported).toMatchObject({ id: sessionID, title: "Exported", location, metadata: { channel: "C123" } })
+      expect(imported.time).toMatchObject({
+        updated: DateTime.makeUnsafe(1_000),
+        idle: DateTime.makeUnsafe(200),
+        viewed: DateTime.makeUnsafe(150),
+      })
       expect(messages).toMatchObject([
-        { id: sourceMessageID, type: "user", text: "Imported message" },
+        { id: sourceMessageID, ...Expected.user("Imported message") },
         { id: errorMessageID, type: "compaction", error: { type: "test_error", message: "Original error" } },
       ])
       expect(yield* Bus.latestSequence(db, sessionID)).toBe(2)
@@ -1316,6 +1392,7 @@ describe("SessionTransfer", () => {
       expect(exported.messages).toEqual(messages)
       const sanitized = yield* transfer.export({ sessionID, sanitize: true })
       expect(sanitized.info.time).toMatchObject({ idle: DateTime.makeUnsafe(200), viewed: DateTime.makeUnsafe(150) })
+      expect(sanitized.info.metadata).toEqual({ redacted: `session-metadata:${sessionID}` })
       expect(sanitized.messages).toMatchObject([
         {
           id: sourceMessageID,

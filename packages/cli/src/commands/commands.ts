@@ -1,6 +1,7 @@
 import { Argument, Flag, GlobalFlag } from "effect/unstable/cli"
 import { Schema } from "effect"
 import { Spec } from "../framework/spec"
+import { Updater } from "../services/updater"
 
 export const PrintLogs = GlobalFlag.setting("print-logs")({
   flag: Flag.boolean("print-logs").pipe(
@@ -56,6 +57,21 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     prompt: Flag.string("prompt").pipe(Flag.withDescription("Prompt to use"), Flag.optional),
   },
   commands: [
+    Spec.make("upgrade", {
+      description: "Upgrade OpenCode to the latest or a specific version",
+      aliases: ["update"],
+      params: {
+        target: Argument.string("target").pipe(
+          Argument.withDescription("Version to upgrade to (with or without a leading v)"),
+          Argument.optional,
+        ),
+        method: Flag.choice("method", Updater.methods).pipe(
+          Flag.withAlias("m"),
+          Flag.withDescription("Installation method to use"),
+          Flag.optional,
+        ),
+      },
+    }),
     Spec.make("acp", { description: "Start an Agent Client Protocol server" }),
     Spec.make("api", {
       description: "Make a request to the running server",
@@ -182,6 +198,24 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
           description: "Install a plugin and add it to the global configuration",
           params: {
             package: Argument.string("package").pipe(Argument.withDescription("npm registry or Git package specifier")),
+          },
+        }),
+        Spec.make("check", {
+          description: "Check package plugins for updates",
+          params: {
+            target: Argument.string("target").pipe(
+              Argument.withDescription("Configured package target"),
+              Argument.optional,
+            ),
+          },
+        }),
+        Spec.make("update", {
+          description: "Update package plugins",
+          params: {
+            target: Argument.string("target").pipe(
+              Argument.withDescription("Configured package target; omit to update all outdated plugins"),
+              Argument.optional,
+            ),
           },
         }),
         Spec.make("remove", {
@@ -327,6 +361,34 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         ...PermissionParams,
       },
     }),
+    Spec.make("session", {
+      description: "Manage sessions",
+      commands: [
+        Spec.make("list", {
+          description: "List top-level sessions in the current project, newest first",
+          params: {
+            ...ServerParams,
+            maxCount: Flag.integer("max-count").pipe(
+              Flag.withAlias("n"),
+              Flag.withSchema(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+              Flag.withDescription("Limit to N most recent sessions (default: 100)"),
+              Flag.optional,
+            ),
+            format: Flag.choice("format", ["table", "json"]).pipe(
+              Flag.withDescription("Output format"),
+              Flag.withDefault("table"),
+            ),
+          },
+        }),
+        Spec.make("delete", {
+          description: "Delete a session and its child sessions",
+          params: {
+            ...ServerParams,
+            sessionID: Argument.string("sessionID").pipe(Argument.withDescription("Session ID to delete")),
+          },
+        }),
+      ],
+    }),
     Spec.make("service", {
       description: "Manage the background server",
       commands: [
@@ -375,6 +437,11 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       params: {
         hostname: Flag.string("hostname").pipe(Flag.optional),
         port: Flag.integer("port").pipe(Flag.optional),
+        cors: Flag.string("cors").pipe(
+          Flag.withSchema(Schema.NonEmptyString),
+          Flag.withDescription("Additional allowed CORS origin (repeat for multiple origins)"),
+          Flag.atLeast(0),
+        ),
         service: Flag.boolean("service").pipe(Flag.withDefault(false)),
         stdio: Flag.boolean("stdio").pipe(Flag.withDefault(false)),
       },

@@ -9,6 +9,7 @@ import { Model } from "./model.js"
 import { NonNegativeInt, PositiveInt, RelativePath } from "./schema.js"
 import { FileAttachment } from "./prompt.js"
 import { SessionID } from "./session-id.js"
+import { SessionMetadata } from "./session-metadata.js"
 import { Location } from "./location.js"
 import { SessionMessage } from "./session-message.js"
 import { Revert } from "./session-revert.js"
@@ -59,6 +60,8 @@ export const Created = Event.durable({
     title: Schema.String.pipe(optional),
     agent: Agent.ID.pipe(optional),
     model: Model.Ref.pipe(optional),
+    /** Host-supplied annotations resolved at creation, including any inherited from a parent. */
+    metadata: SessionMetadata.pipe(optional),
     version: Schema.String,
   },
 })
@@ -230,7 +233,7 @@ export namespace Execution {
   export const Interrupted = Event.durable({
     type: "session.execution.interrupted",
     ...options,
-    schema: { ...Base, reason: Schema.Literals(["user", "shutdown", "superseded"]) },
+    schema: { ...Base, reason: Schema.Literals(["user", "shutdown", "superseded", "inactivity"]) },
   })
   export type Interrupted = typeof Interrupted.Type
 }
@@ -582,6 +585,9 @@ export namespace Compaction {
     schema: {
       ...Base,
       reason: Started.data.fields.reason,
+      model: SessionMessage.CompactionCompleted.fields.model,
+      providerState: SessionMessage.CompactionCompleted.fields.providerState,
+      providerContext: SessionMessage.CompactionCompleted.fields.providerContext,
       text: Schema.String,
       recent: Schema.String,
     },

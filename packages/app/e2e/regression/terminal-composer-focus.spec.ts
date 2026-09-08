@@ -1,4 +1,4 @@
-import { base64Encode, checksum } from "@opencode-ai/util/encode"
+import { base64Encode, checksum } from "@opencode/util/encode"
 import { expect, test, type Page } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
@@ -252,8 +252,15 @@ test("focuses a terminal created from the new-terminal button", async ({ page })
 
 function seedCachedTerminal(page: Page) {
   return page.addInitScript(
-    ({ terminalKey, ptyID }) => {
-      localStorage.setItem("opencode.global.dat:layout", JSON.stringify({ terminal: { height: 320, opened: true } }))
+    ({ terminalKey, ptyID, tabKey, server, sessionID }) => {
+      localStorage.setItem(
+        "opencode.window.browser.dat:tabs.panes",
+        JSON.stringify({ [tabKey]: { terminal: true, terminalHeight: 320 } }),
+      )
+      localStorage.setItem(
+        "opencode.window.browser.dat:tabs",
+        JSON.stringify([{ type: "session", server, sessionId: sessionID }]),
+      )
       localStorage.setItem(
         terminalKey,
         JSON.stringify({
@@ -262,7 +269,13 @@ function seedCachedTerminal(page: Page) {
         }),
       )
     },
-    { terminalKey: terminalStorageKey(), ptyID },
+    {
+      terminalKey: terminalStorageKey(),
+      ptyID,
+      tabKey: `${server}\n/server/${base64Encode(server)}/session/${sessionID}`,
+      server,
+      sessionID,
+    },
   )
 }
 

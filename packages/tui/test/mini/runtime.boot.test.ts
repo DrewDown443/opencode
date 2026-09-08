@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { OpenCode } from "@opencode-ai/client/promise"
+import { OpenCode } from "@opencode/client/promise"
 import { resolveMiniSettings, resolveModelInfo, resolveRunTuiConfig } from "../../src/mini/runtime.boot"
 import { catalogModel, catalogProvider } from "./fixture/catalog"
 import { createTuiResolvedConfig } from "../fixture/tui-runtime"
@@ -43,6 +43,7 @@ describe("run runtime boot", () => {
       turn_summary: "show",
       footer: "show",
       splash: "show",
+      work_spinner: "block-soft-slide",
       mono: false,
     })
     expect(
@@ -53,6 +54,7 @@ describe("run runtime boot", () => {
           turn_summary: "hide",
           footer: "hide",
           splash: "hide",
+          work_spinner: "block-low-comet",
           mono: true,
         },
       }),
@@ -62,6 +64,7 @@ describe("run runtime boot", () => {
       turn_summary: "hide",
       footer: "hide",
       splash: "hide",
+      work_spinner: "block-low-comet",
       mono: true,
     })
   })

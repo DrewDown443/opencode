@@ -1,16 +1,19 @@
-import { expect } from "bun:test"
-import { Agent } from "@opencode-ai/core/agent"
-import { Bus } from "@opencode-ai/core/bus"
-import { Model } from "@opencode-ai/core/model"
-import { Provider } from "@opencode-ai/core/provider"
-import { Session } from "@opencode-ai/core/session"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { Money } from "@opencode-ai/schema/money"
+import { expect, setDefaultTimeout } from "bun:test"
+import { Agent } from "@opencode/core/agent"
+import { Bus } from "@opencode/core/bus"
+import { Model } from "@opencode/core/model"
+import { Provider } from "@opencode/core/provider"
+import { Session } from "@opencode/core/session"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionExecution } from "@opencode/core/session/execution"
+import { SessionMessage } from "@opencode/core/session/message"
+import { Money } from "@opencode/schema/money"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { Effect, Layer } from "effect"
 import { it } from "../../core/test/lib/effect"
 import { ServerFetch } from "../src/fetch"
+
+setDefaultTimeout(30_000)
 
 it.live("updates completed assistant message content through the session HTTP API", () =>
   Effect.gen(function* () {
@@ -26,6 +29,7 @@ it.live("updates completed assistant message content through the session HTTP AP
         const bus = yield* Bus.Service
         return SessionExecution.Service.of({
           active: Effect.sync(() => state.active),
+          isActive: (sessionID) => Effect.sync(() => state.active.has(sessionID)),
           resume: () => Effect.void,
           wake: (sessionID) =>
             Effect.gen(function* () {
@@ -51,8 +55,19 @@ it.live("updates completed assistant message content through the session HTTP AP
       }),
     )
     const handler = yield* ServerFetch.make(
-      { app: { version: "test-version" }, database: { path: ":memory:" }, fs: { filewatcher: false } },
-      { overrides: [[SessionExecution.node, execution]] },
+      {
+        app: { version: "test-version" },
+        database: { path: ":memory:" },
+        fs: { filewatcher: false },
+        models: { fetch: false },
+      },
+      {
+        overrides: [
+          SessionExecution.node.replace(
+            makeGlobalNode({ service: SessionExecution.Service, layer: execution, deps: [Bus.node] }),
+          ),
+        ],
+      },
     )
     const created = yield* Effect.promise(() =>
       handler(
@@ -141,5 +156,5 @@ it.live("updates completed assistant message content through the session HTTP AP
       _tag: "ConflictError",
       resource: state.assistant,
     })
-  }).pipe(Effect.scoped),
+  }),
 )

@@ -1,8 +1,8 @@
-import { Badge } from "@opencode-ai/ui/badge"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { TextInput } from "@opencode-ai/ui/text-input"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Badge } from "@opencode/ui/badge"
+import { Icon } from "@opencode/ui/icon"
+import { IconButton } from "@opencode/ui/icon-button"
+import { TextInput } from "@opencode/ui/text-input"
+import { useDialog } from "@opencode/ui/context/dialog"
 import fuzzysort from "fuzzysort"
 import { type Component, For, Show, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -112,16 +112,9 @@ export const SettingsServers: Component = () => {
                       <ServerHealthIndicator health={health()} />
                       <div class="settings-servers-copy">
                         <span class="settings-servers-name">{serverName(item)}</span>
-                        <span class="settings-servers-meta">
-                          <Show when={health()?.version}>v{health()?.version}</Show>
-                          <Show when={health()?.version && item.type === "http"}> • </Show>
-                          <Show
-                            when={item.type === "http" && item.http.username}
-                            fallback={<Show when={item.type === "http"}>{language.t("server.row.noUsername")}</Show>}
-                          >
-                            {item.http.username}
-                          </Show>
-                        </span>
+                        <Show when={health()?.version}>
+                          <span class="settings-servers-meta">v{health()?.version}</span>
+                        </Show>
                       </div>
                     </div>
                     <div class="settings-servers-actions">

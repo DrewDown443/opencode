@@ -1,11 +1,12 @@
 import { Effect, Option, Schema } from "effect"
-import { Tool } from "@opencode-ai/schema/tool"
+import { Tool } from "@opencode/schema/tool"
 import { Route } from "../route/client.js"
 import { Auth } from "../route/auth.js"
 import { Endpoint } from "../route/endpoint.js"
 import { Framing } from "../route/framing.js"
 import { Protocol } from "../route/protocol.js"
 import {
+  AIError,
   LLMEvent,
   Usage,
   type FinishReason,
@@ -17,6 +18,7 @@ import {
   type ToolCallPart,
   type ToolDefinition,
 } from "../schema/index.js"
+import { classifyProviderFailure } from "../provider-error.js"
 import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared.js"
 import { GeminiToolSchema } from "./utils/gemini-tool-schema.js"
 import { Lifecycle } from "./utils/lifecycle.js"
@@ -221,6 +223,7 @@ const GeminiPromptFeedback = Schema.StructWithRest(
 type GeminiPromptFeedback = Schema.Schema.Type<typeof GeminiPromptFeedback>
 
 const GeminiEvent = Schema.Struct({
+  error: Schema.optional(Schema.Unknown),
   candidates: optionalNull(Schema.Array(GeminiCandidate)),
   promptFeedback: optionalNull(GeminiPromptFeedback),
   usageMetadata: optionalNull(GeminiUsage),
@@ -237,6 +240,10 @@ interface ParserState {
   readonly lifecycle: Lifecycle.State
   readonly reasoningSignature?: string
   readonly textSignature?: string
+  readonly reasoningId?: string
+  readonly textId?: string
+  readonly nextReasoningId: number
+  readonly nextTextId: number
   readonly seenCallIds?: ReadonlySet<string>
 }
 
@@ -458,7 +465,8 @@ function mapSafetySettings(value: unknown) {
 }
 
 const fromRequest = Effect.fn("Gemini.fromRequest")(function* (request: LLMRequest) {
-  const hasTools = request.tools.length > 0
+  const flattened = ProviderShared.flattenToolRequest(request)
+  const hasTools = flattened.tools.length > 0
   const generation = request.generation
   const options = resolveOptions(request)
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
@@ -476,7 +484,7 @@ const fromRequest = Effect.fn("Gemini.fromRequest")(function* (request: LLMReque
 
   return {
     cachedContent: options.cachedContent,
-    contents: yield* lowerMessages(request),
+    contents: yield* lowerMessages(flattened.request),
     safetySettings: options.safetySettings,
     serviceTier: options.serviceTier,
     systemInstruction:
@@ -484,7 +492,7 @@ const fromRequest = Effect.fn("Gemini.fromRequest")(function* (request: LLMReque
     tools: hasTools
       ? [
           {
-            functionDeclarations: request.tools.map((tool) =>
+            functionDeclarations: flattened.tools.map((tool) =>
               lowerTool(tool, ToolSchemaProjection.modelCompatibility(tool.inputSchema, toolSchemaCompatibility)),
             ),
           },
@@ -568,19 +576,23 @@ const finish = (state: ParserState): ReadonlyArray<LLMEvent> => {
 
   const events: LLMEvent[] = []
   let lifecycle = state.lifecycle
-  if (state.reasoningSignature !== undefined)
+  if (state.reasoningId !== undefined)
     lifecycle = Lifecycle.reasoningEnd(
       lifecycle,
       events,
-      "reasoning-0",
-      providerMetadata(state.providerMetadataKey, { thoughtSignature: state.reasoningSignature }),
+      state.reasoningId,
+      state.reasoningSignature === undefined
+        ? undefined
+        : providerMetadata(state.providerMetadataKey, { thoughtSignature: state.reasoningSignature }),
     )
-  if (state.textSignature !== undefined)
+  if (state.textId !== undefined)
     lifecycle = Lifecycle.textEnd(
       lifecycle,
       events,
-      "text-0",
-      providerMetadata(state.providerMetadataKey, { thoughtSignature: state.textSignature }),
+      state.textId,
+      state.textSignature === undefined
+        ? undefined
+        : providerMetadata(state.providerMetadataKey, { thoughtSignature: state.textSignature }),
     )
   Lifecycle.finish(lifecycle, events, {
     reason: {
@@ -598,6 +610,27 @@ const finish = (state: ParserState): ReadonlyArray<LLMEvent> => {
 }
 
 const step = (state: ParserState, event: GeminiEvent) => {
+  if (ProviderShared.isRecord(event.error)) {
+    const body = ProviderShared.encodeJson(event)
+    return Effect.fail(
+      new AIError({
+        reason: classifyProviderFailure({
+          message:
+            typeof event.error.message === "string" && event.error.message.length > 0
+              ? event.error.message
+              : typeof event.error.status === "string" && event.error.status.length > 0
+                ? event.error.status
+                : "Gemini provider error",
+          status: typeof event.error.code === "number" ? event.error.code : undefined,
+          rawBody: body,
+        }),
+      }),
+    )
+  }
+  if ("error" in event)
+    return Effect.fail(
+      ProviderShared.eventError(state.route, `Invalid ${state.route} stream event`, ProviderShared.encodeJson(event)),
+    )
   const nextState = {
     ...state,
     promptFeedback: event.promptFeedback ?? state.promptFeedback,
@@ -606,6 +639,14 @@ const step = (state: ParserState, event: GeminiEvent) => {
       : state.usage,
   }
   const candidate = event.candidates?.[0]
+  if (candidate?.finishReason && mapFinishReason(candidate.finishReason, state.hasToolCalls) === "error")
+    return Effect.fail(
+      ProviderShared.eventError(
+        state.route,
+        `Gemini stopped with ${candidate.finishReason}`,
+        ProviderShared.encodeJson(event),
+      ),
+    )
   if (!candidate?.content)
     return Effect.succeed([
       { ...nextState, finishReason: candidate?.finishReason ?? nextState.finishReason },
@@ -617,6 +658,10 @@ const step = (state: ParserState, event: GeminiEvent) => {
   let lifecycle = nextState.lifecycle
   let reasoningSignature = nextState.reasoningSignature
   let textSignature = nextState.textSignature
+  let reasoningId = nextState.reasoningId
+  let textId = nextState.textId
+  let nextReasoningId = nextState.nextReasoningId
+  let nextTextId = nextState.nextTextId
   // Supplier ids must be tracked across chunks of the same response, not just within one event's parts.
   const seenCallIds = new Set(nextState.seenCallIds)
 
@@ -642,27 +687,51 @@ const step = (state: ParserState, event: GeminiEvent) => {
     else if (signature !== undefined && "text" in part) textSignature = signature
     if ("text" in part && part.text.length > 0) {
       if (part.thought) {
+        if (textId !== undefined) {
+          lifecycle = Lifecycle.textEnd(
+            lifecycle,
+            events,
+            textId,
+            textSignature
+              ? providerMetadata(state.providerMetadataKey, { thoughtSignature: textSignature })
+              : undefined,
+          )
+          textId = undefined
+          textSignature = undefined
+        }
+        if (reasoningId === undefined) {
+          reasoningId = `reasoning-${nextReasoningId}`
+          nextReasoningId += 1
+        }
         lifecycle = Lifecycle.reasoningDelta(
           lifecycle,
           events,
-          "reasoning-0",
+          reasoningId,
           part.text,
           signature ? providerMetadata(state.providerMetadataKey, { thoughtSignature: signature }) : undefined,
         )
         continue
       }
-      lifecycle = Lifecycle.reasoningEnd(
-        lifecycle,
-        events,
-        "reasoning-0",
-        reasoningSignature
-          ? providerMetadata(state.providerMetadataKey, { thoughtSignature: reasoningSignature })
-          : undefined,
-      )
+      if (reasoningId !== undefined) {
+        lifecycle = Lifecycle.reasoningEnd(
+          lifecycle,
+          events,
+          reasoningId,
+          reasoningSignature
+            ? providerMetadata(state.providerMetadataKey, { thoughtSignature: reasoningSignature })
+            : undefined,
+        )
+        reasoningId = undefined
+        reasoningSignature = undefined
+      }
+      if (textId === undefined) {
+        textId = `text-${nextTextId}`
+        nextTextId += 1
+      }
       lifecycle = Lifecycle.textDelta(
         lifecycle,
         events,
-        "text-0",
+        textId,
         part.text,
         textSignature ? providerMetadata(state.providerMetadataKey, { thoughtSignature: textSignature }) : undefined,
       )
@@ -680,14 +749,28 @@ const step = (state: ParserState, event: GeminiEvent) => {
       const duplicate = supplied !== undefined && seenCallIds.has(supplied)
       if (supplied !== undefined) seenCallIds.add(supplied)
       const id = supplied !== undefined && !duplicate ? supplied : `tool_${crypto.randomUUID().replaceAll("-", "")}`
-      lifecycle = Lifecycle.reasoningEnd(
-        lifecycle,
-        events,
-        "reasoning-0",
-        reasoningSignature
-          ? providerMetadata(state.providerMetadataKey, { thoughtSignature: reasoningSignature })
-          : undefined,
-      )
+      if (reasoningId !== undefined) {
+        lifecycle = Lifecycle.reasoningEnd(
+          lifecycle,
+          events,
+          reasoningId,
+          reasoningSignature
+            ? providerMetadata(state.providerMetadataKey, { thoughtSignature: reasoningSignature })
+            : undefined,
+        )
+        reasoningId = undefined
+        reasoningSignature = undefined
+      }
+      if (textId !== undefined) {
+        lifecycle = Lifecycle.textEnd(
+          lifecycle,
+          events,
+          textId,
+          textSignature ? providerMetadata(state.providerMetadataKey, { thoughtSignature: textSignature }) : undefined,
+        )
+        textId = undefined
+        textSignature = undefined
+      }
       lifecycle = Lifecycle.stepStart(lifecycle, events)
       events.push(
         LLMEvent.toolCall({
@@ -710,6 +793,10 @@ const step = (state: ParserState, event: GeminiEvent) => {
       lifecycle,
       reasoningSignature,
       textSignature,
+      reasoningId,
+      textId,
+      nextReasoningId,
+      nextTextId,
       seenCallIds,
       finishReason: candidate.finishReason ?? nextState.finishReason,
     },
@@ -737,6 +824,8 @@ export const protocol = Protocol.make({
       providerMetadataKey: request.model.route.providerMetadataKey ?? String(request.model.provider),
       hasToolCalls: false,
       lifecycle: Lifecycle.initial(),
+      nextReasoningId: 0,
+      nextTextId: 0,
     }),
     step,
     onHalt: (state) => Effect.succeed(finish(state)),

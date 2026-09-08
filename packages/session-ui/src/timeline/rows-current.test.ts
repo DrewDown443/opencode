@@ -3,7 +3,7 @@ import type {
   SessionMessageAssistant,
   SessionMessageAssistantTool,
   SessionMessageInfo,
-} from "@opencode-ai/client/promise"
+} from "@opencode/client/promise"
 import { storyDocument, storyTool } from "../storybook/current-session-scenarios"
 import { createTimelineProjection, Timeline, TimelineRow } from "./projection"
 
@@ -52,6 +52,13 @@ describe("current session timeline rows", () => {
         exit: 0,
         output: { output: "/repo", cursor: 5, size: 5, truncated: false },
         time: { created: 1, completed: 2 },
+      },
+      {
+        id: "msg_shell_completion",
+        type: "synthetic",
+        text: "User shell pwd completed: /repo",
+        metadata: { source: "shell", shellID: "shell_1", state: "completed" },
+        time: { created: 3 },
       },
     ] satisfies SessionMessageInfo[]
     const result = Timeline.constructSessionMessageRows(source, true, { type: "idle" })

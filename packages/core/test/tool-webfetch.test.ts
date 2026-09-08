@@ -2,15 +2,15 @@ import { describe, expect, test } from "bun:test"
 import { Duration, Effect, Fiber, Layer, Schema } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { LayerNodePlatform } from "@opencode-ai/util/effect/app-node-platform"
-import { Permission } from "@opencode-ai/core/permission"
-import { Session } from "@opencode-ai/core/session"
-import { Tool } from "@opencode-ai/core/tool"
-import { WebFetchTool } from "@opencode-ai/core/tool/plugin/webfetch"
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
-import { Image } from "@opencode-ai/core/image"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { LayerNodePlatform } from "@opencode/util/effect/app-node-platform"
+import { Permission } from "@opencode/core/permission"
+import { Session } from "@opencode/core/session"
+import { Tool } from "@opencode/core/tool"
+import { WebFetchTool } from "@opencode/core/tool/plugin/webfetch"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
+import { Image } from "@opencode/core/image"
 import { testEffect } from "./lib/effect"
 import { imagePassthrough } from "./lib/image"
 import { permissionLayer } from "./lib/permission"
@@ -42,11 +42,11 @@ const http = Layer.succeed(
 const permission = permissionLayer({ assert: (input) => Effect.sync(() => assertions.push(input)) })
 const toolLayer = (replacements: LayerNode.Replacements = []) =>
   AppNodeBuilder.build(LayerNode.group([Tool.node, webFetchToolNode]), [
-    [Permission.node, permission],
-    [Image.node, imagePassthrough],
+    Permission.node.replace(permission),
+    Image.node.replace(imagePassthrough),
     ...replacements,
   ])
-const it = testEffect(toolLayer([[LayerNodePlatform.httpClient, http]]))
+const it = testEffect(toolLayer([LayerNodePlatform.httpClient.replace(http)]))
 const live = testEffect(toolLayer())
 
 const reset = () => {
@@ -126,6 +126,15 @@ describe("WebFetchTool helpers", () => {
     const output = WebFetchTool.convertHTMLToMarkdown("x".repeat(WebFetchTool.MAX_RESPONSE_BYTES))
     expect(WebFetchTool.MAX_RESPONSE_BYTES).toBe(5 * 1024 * 1024)
     expect(output).toHaveLength(WebFetchTool.MAX_RESPONSE_BYTES - 64 * 1024)
+  })
+
+  test.each(["x", "\u00e9", "\u{1f600}"])("preserves UTF-8 boundaries at the content limit for %s", (character) => {
+    const budget = WebFetchTool.MAX_RESPONSE_BYTES - 64 * 1024
+    const fitting = "aa" + character.repeat(Math.floor((budget - 2) / Buffer.byteLength(character)))
+    expect(WebFetchTool.convertHTMLToMarkdown(fitting)).toBe(fitting)
+    const truncated = WebFetchTool.convertHTMLToMarkdown(fitting + character)
+    expect(truncated).toBe(fitting)
+    expect(Buffer.byteLength(truncated)).toBe(Buffer.byteLength(fitting))
   })
 
   test("bounds deeply nested list output and fragmented code fences", () => {
@@ -570,6 +579,22 @@ describe("WebFetchTool registration", () => {
       expect(requests).toHaveLength(2)
       expect(requests[0]?.headers["user-agent"]).toBe(webFetchUserAgent)
       expect(requests[1]?.headers["user-agent"]).toBe("opencode")
+    }),
+  )
+
+  it.effect("does not retry ordinary 403 responses", () =>
+    Effect.gen(function* () {
+      reset()
+      respond = () => Effect.succeed(new Response("forbidden", { status: 403 }))
+      const registry = yield* Tool.Service
+      const url = "https://example.com/forbidden"
+
+      expect(yield* executeTool(registry, call({ url, format: "text" }))).toEqual({
+        status: "error",
+        error: { type: "unknown", message: `StatusCode: non 2xx status code (403 GET ${url})` },
+      })
+      expect(requests).toHaveLength(1)
+      expect(requests[0]?.headers["user-agent"]).toBe(webFetchUserAgent)
     }),
   )
 

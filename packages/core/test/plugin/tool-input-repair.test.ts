@@ -1,10 +1,10 @@
 import { describe, expect } from "bun:test"
-import { Agent } from "@opencode-ai/core/agent"
-import { ToolInputRepairPlugin } from "@opencode-ai/core/plugin/tool-input-repair"
-import { Session } from "@opencode-ai/core/session"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import type { ToolHooks } from "@opencode-ai/plugin/effect/tool"
-import { Tool } from "@opencode-ai/schema/tool"
+import { Agent } from "@opencode/core/agent"
+import { ToolInputRepairPlugin } from "@opencode/core/plugin/tool-input-repair"
+import { Session } from "@opencode/core/session"
+import { SessionMessage } from "@opencode/core/session/message"
+import type { ToolHooks } from "@opencode/plugin/effect/tool"
+import { Tool } from "@opencode/schema/tool"
 import { Effect, type JsonSchema } from "effect"
 import { it } from "../lib/effect"
 import { host } from "./host"
@@ -40,6 +40,7 @@ function run(input: unknown, inputSchema: JsonSchema.JsonSchema) {
               list: () => [tool],
               get: (id) => (id === tool.id ? tool : undefined),
               add: () => {},
+              namespace: () => {},
               update: () => {},
               remove: () => {},
             })
@@ -377,6 +378,7 @@ describe("tool input repair plugin", () => {
         dictionary: { first: "4" },
         missing: "5",
         pointer: "6",
+        escaped: "7",
       }
       const event = yield* run(input, {
         ...object({
@@ -386,9 +388,11 @@ describe("tool input repair plugin", () => {
           dictionary: { type: "object", additionalProperties: { $ref: "#/$defs/integer" } },
           missing: { $ref: "#/$defs/missing" },
           pointer: { $ref: "#/$defs/nested/properties/count" },
+          escaped: { $ref: "#/$defs/a~1b~0c" },
         }),
         $defs: {
           integer: { type: "integer" },
+          "a/b~c": { type: "integer" },
           nested: object({ count: { $ref: "#/$defs/integer" } }),
         },
         definitions: { boolean: { type: "boolean" } },
@@ -401,6 +405,7 @@ describe("tool input repair plugin", () => {
         dictionary: { first: 4 },
         missing: "5",
         pointer: "6",
+        escaped: 7,
       })
       expect(input.nested.count).toBe("3")
       expect(input.dictionary.first).toBe("4")

@@ -1,25 +1,25 @@
 import { expect } from "bun:test"
-import { LanguageModel, LLM, LLMClient, LLMEvent } from "@opencode-ai/ai"
-import { OpenAIChat } from "@opencode-ai/ai/protocols/openai-chat"
-import { TestLLM } from "@opencode-ai/ai/testing"
-import { Agent } from "@opencode-ai/core/agent"
-import { Bus } from "@opencode-ai/core/bus"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { EventTable } from "@opencode-ai/core/event/sql"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { AbsolutePath, RelativePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
-import { SessionStep } from "@opencode-ai/core/session/runner/step"
-import { SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
-import { Snapshot } from "@opencode-ai/core/snapshot"
-import { ToolOutput } from "@opencode-ai/core/tool-output"
-import { Money } from "@opencode-ai/schema/money"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
+import { LanguageModel, LLM, LLMEvent } from "@opencode/ai"
+import { OpenAIChat } from "@opencode/ai/protocols/openai-chat"
+import { TestLLM } from "@opencode/ai/testing"
+import { Agent } from "@opencode/core/agent"
+import { Bus } from "@opencode/core/bus"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { EventTable } from "@opencode/core/event/sql"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { AbsolutePath, RelativePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionRunnerModel } from "@opencode/core/session/runner/model"
+import { SessionStep } from "@opencode/core/session/runner/step"
+import { SessionMessageTable, SessionTable } from "@opencode/core/session/sql"
+import { Snapshot } from "@opencode/core/snapshot"
+import { ToolOutput } from "@opencode/core/tool-output"
+import { Money } from "@opencode/schema/money"
+import { LayerNode } from "@opencode/util/effect/layer-node"
 import { asc, eq } from "drizzle-orm"
 import { Effect, Exit, Layer } from "effect"
 import { testEffect } from "./lib/effect"
@@ -27,25 +27,29 @@ import { testEffect } from "./lib/effect"
 const it = testEffect(
   Layer.merge(
     AppNodeBuilder.build(LayerNode.group([Database.node, Bus.node, SessionProjector.node, ToolOutput.node]), [
-      [Bus.node, Bus.configured({ persist: true })],
+      Bus.node.replace(Bus.configured({ persist: true })),
     ]),
-    TestLLM.layer(),
+    TestLLM.testLayer(),
   ),
 )
 
-for (const finish of ["stop", "content-filter"] as const) {
-  it.effect(`settles ${finish} with snapshot files and nonzero usage after its tool`, () =>
+for (const fixture of [
+  { finish: "stop", toolChoice: undefined },
+  { finish: "content-filter", toolChoice: undefined },
+  { finish: "stop", toolChoice: "none" },
+] as const) {
+  it.effect(`settles ${fixture.finish} with tool choice ${fixture.toolChoice ?? "default"}`, () =>
     Effect.gen(function* () {
       const db = (yield* Database.Service).db
-      const llm = yield* TestLLM.Service
+      const llm = yield* TestLLM.Test
       const sessionID = Session.ID.create()
       const assistantMessageID = SessionMessage.ID.create()
       const start = Snapshot.ID.make("before")
       const end = Snapshot.ID.make("after")
       const files = [RelativePath.make("changed.ts")]
       let captures = 0
+      let executions = 0
       const steps = yield* SessionStep.make.pipe(
-        Effect.provideService(LLMClient.Service, llm.client),
         Effect.provide(
           Layer.mock(Snapshot.Service)({
             capture: () => Effect.sync(() => (captures++ === 0 ? start : end)),
@@ -81,7 +85,7 @@ for (const finish of ["stop", "content-filter"] as const) {
       yield* llm.push(
         TestLLM.complete(
           {
-            reason: { normalized: finish },
+            reason: { normalized: fixture.finish },
             usage: {
               inputTokens: 15,
               outputTokens: 6,
@@ -101,17 +105,28 @@ for (const finish of ["stop", "content-filter"] as const) {
           agent: Agent.defaultID,
           model,
           prepared: {
-            request: LLM.request({ model: model.model, prompt: "Run one tool" }),
+            retry: () => Effect.void,
+            request: LLM.request({ model: model.model, prompt: "Run one tool", toolChoice: fixture.toolChoice }),
             options: {},
-            executeTool: () => Effect.succeed({ content: "Completed tool" }),
+            executeTool: () =>
+              Effect.sync(() => {
+                executions++
+                return { content: [{ type: "text", text: "Completed tool" }] }
+              }),
           },
-          toolsDisabled: false,
+          retry: (_cause, _error, retry) =>
+            Effect.succeed(retry ? { retry: true, attempt: 2, delay: 0 } : { retry: false }),
           recoverContinuation: true,
           recoverOverflow: Effect.succeed(false),
         })
         .pipe(Effect.exit)
-      expect(Exit.isSuccess(result)).toBe(finish === "stop")
-      expect(llm.requests).toHaveLength(1)
+      expect(Exit.isSuccess(result)).toBe(fixture.finish === "stop")
+      expect(executions).toBe(fixture.toolChoice === "none" ? 0 : 1)
+      if (Exit.isSuccess(result))
+        expect(result.value).toEqual(
+          SessionStep.Outcome.Completed({ needsContinuation: fixture.toolChoice !== "none" }),
+        )
+      expect(yield* llm.requests()).toHaveLength(1)
       expect(captures).toBe(2)
       const message = yield* db
         .select()
@@ -119,10 +134,10 @@ for (const finish of ["stop", "content-filter"] as const) {
         .where(eq(SessionMessageTable.id, assistantMessageID))
         .get()
       expect(message?.data).toMatchObject({
-        finish,
+        finish: fixture.finish,
         tokens: { input: 10, output: 4, reasoning: 2, cache: { read: 3, write: 2 } },
         snapshot: { start, end, files },
-        content: [{ type: "tool", state: { status: "completed" } }],
+        content: [{ type: "tool", state: { status: fixture.toolChoice === "none" ? "error" : "completed" } }],
       })
       expect(message?.data).toHaveProperty("cost", expect.closeTo(0.0000233, 10))
       const events = yield* db
@@ -132,9 +147,13 @@ for (const finish of ["stop", "content-filter"] as const) {
         .orderBy(asc(EventTable.seq))
         .all()
       const types = events.map((event) => event.type)
-      const terminal = finish === "stop" ? "session.step.ended.1" : "session.step.failed.1"
+      const terminal = fixture.finish === "stop" ? "session.step.ended.1" : "session.step.failed.1"
+      expect(types.filter((type) => type === "session.step.streamed.1")).toHaveLength(1)
       expect(types.filter((type) => type === terminal)).toHaveLength(1)
-      expect(types.indexOf("session.tool.success.2")).toBeLessThan(types.indexOf(terminal))
+      expect(types.indexOf("session.step.streamed.1")).toBeLessThan(types.indexOf(terminal))
+      expect(
+        types.indexOf(fixture.toolChoice === "none" ? "session.tool.failed.2" : "session.tool.success.2"),
+      ).toBeLessThan(types.indexOf(terminal))
     }),
   )
 }

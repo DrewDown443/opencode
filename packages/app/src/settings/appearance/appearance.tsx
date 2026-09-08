@@ -1,6 +1,6 @@
-import { Component, createMemo } from "solid-js"
-import { Select } from "@opencode-ai/ui/select"
-import { TextInput } from "@opencode-ai/ui/text-input"
+import { Component } from "solid-js"
+import { Select } from "@opencode/ui/select"
+import { TextInput } from "@opencode/ui/text-input"
 import { useLanguage } from "@/runtime/i18n/language"
 import { ExternalLink } from "@/runtime/platform/external-link"
 import { SettingsList } from "@/settings/list"
@@ -9,7 +9,6 @@ import { createAppearanceSettingsController, type AppearanceSettingsController }
 import "@/settings/settings.css"
 
 const schemeOptions: ("system" | "light" | "dark")[] = ["system", "light", "dark"]
-const tabLayoutOptions: ("horizontal" | "vertical")[] = ["horizontal", "vertical"]
 const fontSettings = {
   ui: {
     action: "settings-ui-font",
@@ -125,30 +124,6 @@ export const SettingsAppearance: Component = () => {
             <FontSetting kind="ui" fonts={appearance.fonts} />
             <FontSetting kind="code" fonts={appearance.fonts} />
             <FontSetting kind="terminal" fonts={appearance.fonts} />
-          </SettingsList>
-        </div>
-
-        <div class="settings-section">
-          <h3 class="settings-section-title">{language.t("settings.appearance.section.experimental")}</h3>
-          <SettingsList>
-            <SettingsRow
-              title={language.t("settings.appearance.row.tabs.title")}
-              description={language.t("settings.appearance.row.tabs.description")}
-            >
-              <Select
-                data-action="settings-tab-layout"
-                options={tabLayoutOptions}
-                current={tabLayoutOptions.find((option) => option === appearance.tabs.current())}
-                placement="bottom-end"
-                gutter={6}
-                label={(option) =>
-                  option === "horizontal"
-                    ? language.t("settings.appearance.row.tabs.horizontal")
-                    : language.t("settings.appearance.row.tabs.vertical")
-                }
-                onSelect={(option) => option && appearance.tabs.select(option)}
-              />
-            </SettingsRow>
           </SettingsList>
         </div>
       </div>

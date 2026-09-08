@@ -1,12 +1,12 @@
-import { TextField } from "@opencode-ai/ui/text-field"
-import { captureException, isEnabled } from "@sentry/solid"
-import { Logo } from "@opencode-ai/ui/logo"
-import { Button } from "@opencode-ai/ui/button"
+import { TextField } from "@opencode/ui/text-field"
+import type { captureException } from "@sentry/solid"
+import { Logo } from "@opencode/ui/logo"
+import { Button } from "@opencode/ui/button"
 import { Component, createSignal, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { usePlatform } from "@/runtime/platform/platform"
 import { useLanguage } from "@/runtime/i18n/language"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Icon } from "@opencode/ui/icon"
 import { errorDescriptionKey, errorStatus } from "./description"
 
 export type InitError = {
@@ -227,6 +227,7 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
   let recordedFatalError: Promise<void> | undefined
   const [store, setStore] = createStore({
     actionError: undefined as string | undefined,
+    captureException: undefined as typeof captureException | undefined,
   })
 
   function ensureFatalErrorRecorded() {
@@ -243,6 +244,11 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
 
   onMount(() => {
     void ensureFatalErrorRecorded().catch(() => undefined)
+    void import("@sentry/solid")
+      .then(({ captureException, isEnabled }) => {
+        if (isEnabled()) setStore("captureException", () => captureException)
+      })
+      .catch(() => undefined)
   })
 
   async function checkForUpdates() {
@@ -311,15 +317,15 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
               {language.t("error.page.action.exportLogs")}
             </Button>
           </Show>
-          <Show when={isEnabled}>
-            {(_) => {
+          <Show when={store.captureException}>
+            {(capture) => {
               const [reported, setReported] = createSignal(false)
               return (
                 <Button
                   size="large"
                   disabled={reported()}
                   onClick={() => {
-                    captureException(props.error)
+                    capture()(props.error)
                     setReported(true)
                   }}
                 >
