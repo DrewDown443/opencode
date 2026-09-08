@@ -206,9 +206,9 @@ test("animates review and terminal panels while caching hidden terminal content"
 
   await page.keyboard.press("Control+Backquote")
   await expect(panel).toBeVisible()
-  await expectAnimation(page, "terminal-panel-size-in")
+  await expectAnimation(page, "auxiliary-panel-size-in")
   await page.keyboard.press("Control+Backquote")
-  await expectAnimation(page, "terminal-panel-size-out")
+  await expectAnimation(page, "auxiliary-panel-size-out")
   await expect(panel).toBeHidden()
   await expect(page.locator('[data-component="terminal"]')).toBeAttached()
 })

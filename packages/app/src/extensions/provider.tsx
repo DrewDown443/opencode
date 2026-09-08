@@ -93,7 +93,7 @@ function createHost() {
   const instances = new Map<string, { definition: object; dispose: () => void }>()
   const storage = new Map<string, unknown>()
   const memories = new Map<string, unknown>()
-  const persistent = new Map<string, { value: unknown; reset(): void }>()
+  const persistent = new Map<string, { value: unknown; users: number; reset(): void; dispose(): void }>()
   const workspaceRemoved = new Set<(value: { serverID: string; directory: string }) => void>()
   const attempted = new WeakSet<Plugin.Definition>()
   let instanceID = 0
@@ -291,11 +291,27 @@ function createHost() {
     const name = JSON.stringify([target.storage, target.key])
     const previous = persistent.get(name)
     type Value = readonly [Store<S["Type"]>, SetStoreFunction<S["Type"]>, () => boolean]
-    if (previous) return previous.value as Value
-    const pair = runWithOwner(owner, () => persisted(target, schema, initial))!
-    const value = [pair[0], pair[1], pair[3]] as const
-    persistent.set(name, { value, reset: () => pair[1](reconcile(initial)) })
-    return value
+    const entry =
+      previous ??
+      createRoot((dispose) => {
+        const pair = persisted(target, schema, initial)
+        return {
+          value: [pair[0], pair[1], pair[3]] as const,
+          users: 0,
+          reset: () => pair[1](reconcile(initial)),
+          dispose,
+        }
+      }, owner)
+    persistent.set(name, entry)
+    entry.users++
+    // Overlapping activation generations share state. Evicted workspace owners
+    // release their hydrated buffers; the persistence layer flushes before disposal.
+    onCleanup(() => {
+      if (--entry.users) return
+      entry.dispose()
+      persistent.delete(name)
+    })
+    return entry.value as Value
   }
 
   const activate = (definition: NonNullable<typeof platform.extensionPlugins>[number]) =>

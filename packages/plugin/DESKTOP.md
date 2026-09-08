@@ -31,7 +31,9 @@ mobile navigation. The host owns docking and resize state through `view.auxiliar
 Schema-aware `storage.persist(key, schema, initial, options)` returns a Solid store,
 setter, and hydration accessor. `options.scope` selects a server/workspace and
 `legacyKey` imports that feature's previous host key. `storage.remove` clears that
-scope. `workspaces.onRemoved` lets extensions release workspace-local state.
+scope. Call it in an owned Solid scope; the host shares overlapping consumers and
+flushes/releases the hydrated store when its last owner is disposed.
+`workspaces.onRemoved` lets extensions release workspace-local state.
 `servers.list`, server URLs, command keybind matching, and the shared console font
 let extensions use the existing client and UI behavior without importing App internals.
 

@@ -14,7 +14,9 @@ const renderer = (version: string) => `
   const { usePlugin } = require('@opencode/plugin/desktop');
   const { createEffect, createComponent } = require('solid-js');
   const { Panel } = require('@opencode/plugin/desktop/solid');
+  const { Schema } = require('effect');
   module.exports.default = { id: 'test.lifecycle', setup(ctx) {
+    const [documentState, setDocument, ready] = ctx.storage.persist('document', Schema.Struct({ text: Schema.String }), { text: 'empty' }, { legacyKey: 'extension-fixture-legacy' });
     const [state, update] = ctx.storage.memory('counts', { initial: { starts: 0, stops: 0 } });
     update(state => state.starts++);
     ctx.lifecycle.own(() => update(state => state.stops++));
@@ -23,11 +25,16 @@ const renderer = (version: string) => `
       createEffect(() => output.textContent = ${JSON.stringify(version)} + ':' + state.starts + ':' + state.stops);
       return output;
     };
-    ctx.commands.register(() => [{ id: 'show', title: 'Show extension fixture', bind: 'mod+shift+y', run() { const session = ctx.sessions.current(); if (session) ctx.ui.panel.open('state', session) } }]);
+    ctx.commands.register(() => [
+      { id: 'show', title: 'Show extension fixture', bind: 'mod+shift+y', run() { const session = ctx.sessions.current(); if (session) ctx.ui.panel.open('state', session) } },
+      { id: 'save', title: 'Save extension fixture', bind: 'mod+shift+x', run() { setDocument('text', 'saved') } },
+    ]);
     ctx.ui.slot({ append: 'session.panel', render: () => createComponent(Panel, { id: 'state', title: 'File utilities', group: 'state', get children() { return marker('extension-panel-lifecycle') } }) });
     ctx.ui.slot({ append: 'app', render() {
       if (usePlugin().lifecycle.signal !== ctx.lifecycle.signal) throw new Error('Shared plugin context identity was lost');
-      return marker('extension-lifecycle');
+      const stored = document.createElement('output'); stored.hidden = true; stored.dataset.testid = 'extension-persisted';
+      createEffect(() => stored.textContent = ready() ? documentState.text : 'loading');
+      return [marker('extension-lifecycle'), stored];
     } });
   } };`
 const payload = Schema.Struct({
@@ -61,7 +68,7 @@ for (const direction of ["ltr", "rtl"] as const)
         renderer: code,
         files: { "assets/style.css": ":root { --installed-extension-marker: 1; }" },
         manifest: {
-          imports: ["@opencode/plugin/desktop", "@opencode/plugin/desktop/solid", "solid-js"],
+          imports: ["@opencode/plugin/desktop", "@opencode/plugin/desktop/solid", "solid-js", "effect"],
           style: "assets/style.css",
         },
       })
@@ -114,6 +121,9 @@ for (const direction of ["ltr", "rtl"] as const)
         pageMessages: () => ({ items: [] }),
       })
       await installStressSessionTabs(target)
+      await target.addInitScript(() =>
+        localStorage.setItem("opencode.global.dat:extension-fixture-legacy", JSON.stringify({ text: "legacy" })),
+      )
       await target.goto("/e2e/extensions/manager-fixture.html")
       await target.getByTestId("settings-screen").getByRole("tab", { name: "Extensions", exact: true }).click()
       await expect(target.getByRole("heading", { name: "Install extensions", exact: true })).toBeVisible()
@@ -163,13 +173,18 @@ for (const direction of ["ltr", "rtl"] as const)
       const enabled = page.getByRole("switch", { name: "Enable File utilities", exact: true })
       await expect(enabled).toBeChecked()
       await expect(page.getByTestId("extension-lifecycle")).toHaveText("1.0.0:1:0")
+      await expect(page.getByTestId("extension-persisted")).toHaveText("legacy")
+      await page.keyboard.press("Control+Shift+x")
+      await expect(page.getByTestId("extension-persisted")).toHaveText("saved")
       await page.screenshot({ path: info.outputPath("extensions-manager.png") })
       await page.getByRole("button", { name: "Reload File utilities", exact: true }).click()
       await expect(page.getByTestId("extension-lifecycle")).toHaveText("1.0.0:2:1")
+      await expect(page.getByTestId("extension-persisted")).toHaveText("saved")
       await expect(page.locator('link[href*="/__desktop-extensions/assets/"]')).toHaveCount(1)
       const second = await context.newPage()
       await open(second)
       await expect(second.getByTestId("extension-lifecycle")).toHaveText("1.0.0:1:0")
+      await expect(second.getByTestId("extension-persisted")).toHaveText("saved")
       await second.locator('header a[href$="/ses_smoke_source"]').click()
       await expect(second.getByRole("heading", { name: fixture.expected.sourceTitle, exact: true })).toBeVisible()
       await expect(second.getByRole("button", { name: "Toggle review", exact: true })).toBeEnabled()
@@ -181,6 +196,7 @@ for (const direction of ["ltr", "rtl"] as const)
         buffer: Buffer.from(await archive("2.0.0")),
       })
       await expect(page.getByTestId("extension-lifecycle")).toHaveText("2.0.0:3:2")
+      await expect(page.getByTestId("extension-persisted")).toHaveText("saved")
       await expect(second.getByTestId("extension-lifecycle")).toHaveText("2.0.0:2:1")
       await expect(second.getByTestId("extension-panel-lifecycle")).toHaveText("2.0.0:2:1")
       await page.getByLabel("Extension files", { exact: true }).setInputFiles({
@@ -212,10 +228,12 @@ for (const direction of ["ltr", "rtl"] as const)
         .click()
       await expect(second.getByRole("switch", { name: "Enable File utilities", exact: true })).not.toBeChecked()
       await expect(page.getByTestId("extension-lifecycle")).toHaveCount(0)
+      await expect(page.getByTestId("extension-persisted")).toHaveCount(0)
       await expect(second.getByTestId("extension-lifecycle")).toHaveCount(0)
       await expect(page.locator('link[href*="/__desktop-extensions/assets/"]')).toHaveCount(0)
       await enabled.press("Space")
       await expect(page.getByTestId("extension-lifecycle")).toHaveText("4.0.0:5:4")
+      await expect(page.getByTestId("extension-persisted")).toHaveText("saved")
       await expect(second.getByTestId("extension-lifecycle")).toHaveText("4.0.0:4:3")
       const archives = await Promise.all(
         ["Text helpers", "Path helpers"].map(async (name, index) => ({

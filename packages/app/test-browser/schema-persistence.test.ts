@@ -48,6 +48,40 @@ function desktop() {
 }
 
 describe("schema-backed persistence", () => {
+  for (const mode of ["web", "desktop"] as const) {
+    test(`relocates an extracted workspace key from an alias in ${mode} storage`, async () => {
+      const native = desktop()
+      const target = {
+        ...Persist.workspace(`C:\\extension-relocation-${mode}`, "extension.example.document"),
+        previousKeys: ["workspace:legacy"],
+      }
+      const previous = `${target.workspaceStorageAliases![0]}:workspace:legacy`
+      const current = `${target.storage}:${target.key}`
+      const read = (key: string) => (mode === "web" ? localStorage.getItem(key) : native.values.get(key))
+      const raw = JSON.stringify({ enabled: false, label: "retained" })
+      if (mode === "web") localStorage.setItem(previous, raw)
+      if (mode === "desktop") native.values.set(previous, raw)
+      const mounted = createRoot((dispose) => {
+        const state = persisted(target, Current, initial, mode === "web" ? web : native.platform)
+        const ready = new Promise<void>((resolve) =>
+          createComputed(() => {
+            if (state[3]()) resolve()
+          }),
+        )
+        return { dispose, state, ready }
+      })
+      try {
+        await mounted.ready
+        expect(mounted.state[3]()).toBe(true)
+        expect(mounted.state[0]).toEqual({ enabled: false, label: "retained" })
+        expect(read(current)).toBe(raw)
+        expect(read(previous)).toBeFalsy()
+      } finally {
+        mounted.dispose()
+      }
+    })
+  }
+
   test("clears the recent tab after restoring it from storage", () => {
     const target = Persist.global("schema-recent-clear")
     const key = `${target.storage}:${target.key}`
