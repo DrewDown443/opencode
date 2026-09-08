@@ -34,14 +34,12 @@ const sections = [
     { value: "shortcuts", icon: "keyboard", label: "settings.tab.shortcuts" },
   ],
   [
-    { value: "servers", icon: "server", label: "status.popover.tab.servers" },
     { value: "projects", icon: "folder", label: "settings.tab.projects" },
     { value: "workspaces", icon: "outline-worktree", label: "settings.tab.workspaces" },
-  ],
-  [
     { value: "providers", icon: "providers", label: "settings.providers.title" },
     { value: "models", icon: "models", label: "settings.models.title" },
     { value: "extensions", icon: "extensions", label: "settings.tab.extensions" },
+    { value: "servers", icon: "server", label: "status.popover.tab.servers" },
   ],
   [{ value: "experimental", icon: "flask", label: "settings.tab.experimental" }],
   [{ value: "about", icon: "info", label: "settings.tab.about" }],
