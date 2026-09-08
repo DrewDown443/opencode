@@ -68,7 +68,7 @@ export const SettingsExtensions: Component = () => {
       </div>
 
       <div class="settings-tab-body">
-        <Tabs variant="pill" defaultValue="mcps" class="settings-extensions-tabs">
+        <Tabs variant="pill" defaultValue="mcps" class="settings-extensions-tabs settings-subtabs">
           <Tabs.List>
             <Tabs.Trigger value="mcps">{language.t("settings.extensions.tab.mcps")}</Tabs.Trigger>
             <Tabs.Trigger value="plugins">{language.t("status.popover.tab.plugins")}</Tabs.Trigger>

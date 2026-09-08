@@ -138,7 +138,7 @@ export const SettingsProviders: Component<{
         </div>
       </div>
 
-      <div class="settings-tab-body settings-providers">
+      <div class="settings-tab-body settings-tab-body--sectioned settings-providers">
         <div class="settings-section" data-component="connected-providers-section">
           <h3 class="settings-section-title">{language.t("settings.providers.section.connected")}</h3>
           <SettingsList>
