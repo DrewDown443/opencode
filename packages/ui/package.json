@@ -38,6 +38,7 @@
     "./avatar": "./src/data-display/avatar/avatar.tsx",
     "./badge": "./src/data-display/badge/badge.tsx",
     "./button": "./src/actions/button/button.tsx",
+    "./file-tree-item": "./src/components/file-tree-item.tsx",
     "./button.css": "./src/actions/button/button.css",
     "./checkbox": "./src/forms/checkbox/checkbox.tsx",
     "./dialog": "./src/overlays/dialog/dialog.tsx",
