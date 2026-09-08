@@ -1,5 +1,5 @@
 import { createMemo, createResource, onMount, type Accessor } from "solid-js"
-import type { ConfigPreferences, ConfigShellOption, ConfigUpdatePreferencesInput } from "@opencode/client/promise"
+import type { ConfigPreferences, ConfigUpdatePreferencesInput } from "@opencode/client/promise"
 import type { ColorScheme } from "@opencode/ui/theme/context"
 import { useTheme } from "@opencode/ui/theme/context"
 import {
@@ -24,42 +24,38 @@ import { showToast } from "@/shell/notifications/toast"
 export { createShellOptions, createSoundPreviewController } from "./behavior"
 export type { ShellOption, ShellSelectOption } from "./behavior"
 
-export function createServerPreferencesController(server: Accessor<ServerConnection.Any | undefined>) {
+export function createServerPreferencesController(server: Accessor<ServerConnection.Any>) {
   const language = useLanguage()
   const serverCtx = useServerCtx(server)
-  const source = () => {
-    const current = server()
-    return current && ServerConnection.key(current)
-  }
-  const [preferences, preferencesActions] = createResource<ConfigPreferences, string>(
+  const source = () => ServerConnection.key(server())
+  const [preferences, preferencesActions] = createResource<ConfigPreferences, ServerConnection.Key>(
     source,
     () =>
       serverCtx()
-        ?.sdk.api.config.preferences()
-        .catch(() => ({})) ?? Promise.resolve({}),
+        .sdk.api.config.preferences()
+        .catch(() => ({})),
     { initialValue: {} },
   )
-  const [shells] = createResource<ConfigShellOption[], string>(
+  const [shells] = createResource(
     source,
     () =>
       serverCtx()
-        ?.sdk.api.config.shells()
-        .catch(() => []) ?? Promise.resolve([]),
+        .sdk.api.config.shells()
+        .catch(() => []),
     { initialValue: [] },
   )
   const [providers] = createResource(
     source,
     () =>
       serverCtx()
-        ?.sdk.api.websearch.providers()
+        .sdk.api.websearch.providers()
         .then((result) => result.data)
-        .catch(() => []) ?? Promise.resolve([]),
+        .catch(() => []),
     { initialValue: [] },
   )
 
   const update = async (patch: ConfigUpdatePreferencesInput) => {
     const context = serverCtx()
-    if (!context) return
     const previous = preferences.latest
     preferencesActions.mutate({
       ...previous,
@@ -80,7 +76,7 @@ export function createServerPreferencesController(server: Accessor<ServerConnect
   }
 
   const websearchOptions = createMemo(() => {
-    const options = (providers.latest ?? []).map((provider) => ({ value: provider.id, label: provider.name }))
+    const options = providers.latest.map((provider) => ({ value: provider.id, label: provider.name }))
     const selected = preferences.latest.websearch
     const configured = selected && selected.provider !== "random" ? selected.provider : undefined
     return [

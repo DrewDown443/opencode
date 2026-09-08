@@ -7,23 +7,6 @@
 
 .project-settings-extension-tabs[data-component="tabs-v2"][data-variant="pill"] > [data-slot="tabs-v2-list"] {
   width: auto;
-  padding-inline: 0 !important;
-}
-
-.project-settings-extension-tabs[data-component="tabs-v2"][data-variant="pill"] > [data-slot="tabs-v2-list"]::before {
-  display: none;
-}
-
-.project-settings-extension-tabs[data-component="tabs-v2"][data-variant="pill"]
-  > [data-slot="tabs-v2-list"]
-  [data-slot="tabs-v2-trigger-wrapper"] {
-  border-radius: 6px;
-}
-
-.project-settings-extension-tabs[data-component="tabs-v2"][data-variant="pill"]
-  > [data-slot="tabs-v2-list"]
-  [data-slot="tabs-v2-trigger"] {
-  padding-inline: 8px;
 }
 
 .project-settings-extension-tabs [data-slot="tabs-v2-content"] {
@@ -75,8 +58,6 @@
 .project-settings-extension-row-name {
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
-  font-weight: 530;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -251,12 +232,7 @@
   transition: box-shadow 120ms ease;
 }
 
-.project-settings-color:focus-visible {
-  box-shadow:
-    0 0 0 2px var(--v2-background-bg-layer-01),
-    0 0 0 4px var(--v2-border-border-focus);
-}
-
+.project-settings-color:focus-visible,
 .project-settings-color--selected {
   box-shadow:
     0 0 0 2px var(--v2-background-bg-layer-01),

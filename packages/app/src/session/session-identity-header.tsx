@@ -9,7 +9,7 @@ import { useNavigate } from "@solidjs/router"
 import { createMemo, Show, type ParentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useServer } from "@/runtime/server/current"
-import { ServerConnection, useServers } from "@/runtime/server/registry"
+import { ServerConnection } from "@/runtime/server/registry"
 import { useLanguage } from "@/runtime/i18n/language"
 import { usePlatform } from "@/runtime/platform/platform"
 import { displayName, errorMessage, getProjectAvatarSource, projectForSession } from "@/shell/layout/helpers"
@@ -42,7 +42,6 @@ export function SessionProjectMenu(props: {
   showProjectIcon: boolean
 }) {
   const server = useServer()
-  const servers = useServers()
   const language = useLanguage()
   const platform = usePlatform()
   const layout = useLayout()
@@ -72,7 +71,6 @@ export function SessionProjectMenu(props: {
     settingsSurface.openProject({
       server: ServerConnection.key(server.conn),
       project: current.worktree,
-      parent: servers.list.length > 1 ? "server" : "root",
     })
   }
 

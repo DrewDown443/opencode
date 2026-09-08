@@ -9,7 +9,6 @@ export type SettingsNavItem = {
   label: string
   icon: ComponentProps<typeof Icon>["name"]
   disabled?: boolean
-  onSelect?: () => void
 }
 
 export type SettingsNavGroup = {
@@ -54,12 +53,7 @@ export function SettingsNavigation(props: {
                         </Show>
                         <For each={group.items}>
                           {(item) => (
-                            <Menu.RadioItem
-                              value={item.value}
-                              disabled={item.disabled}
-                              closeOnSelect
-                              onSelect={item.onSelect}
-                            >
+                            <Menu.RadioItem value={item.value} disabled={item.disabled} closeOnSelect>
                               <Icon name={item.icon} />
                               {item.label}
                             </Menu.RadioItem>
@@ -92,7 +86,7 @@ export function SettingsNavigation(props: {
                   </Show>
                   <For each={group.items}>
                     {(item) => (
-                      <Tabs.Trigger value={item.value} disabled={item.disabled} onClick={item.onSelect}>
+                      <Tabs.Trigger value={item.value} disabled={item.disabled}>
                         <Icon name={item.icon} />
                         {item.label}
                       </Tabs.Trigger>

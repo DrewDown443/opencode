@@ -89,6 +89,15 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
     const view = (): SettingsView => location.state?.settings?.view ?? { type: "root", tab: "general" }
     let focus: HTMLElement | undefined
 
+    const show = (view: SettingsView, replace: boolean) => {
+      const route = layout.route()
+      if (route.type !== "settings" && document.activeElement instanceof HTMLElement) focus = document.activeElement
+      navigate("/settings", {
+        replace,
+        state: { settings: { route: route.type === "settings" ? source() : route, view } },
+      })
+    }
+
     createEffect(
       on(
         open,
@@ -106,48 +115,24 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
       route: source,
       view,
       open(tab: SettingsRootTab = "general") {
-        const route = layout.route()
-        if (route.type !== "settings") {
-          if (document.activeElement instanceof HTMLElement) focus = document.activeElement
-        }
-        navigate("/settings", {
-          replace: open(),
-          state: { settings: { route: route.type === "settings" ? source() : route, view: { type: "root", tab } } },
-        })
+        show({ type: "root", tab }, open())
       },
       openServer(server: string, tab: SettingsServerTab = "general") {
-        const route = layout.route()
-        if (route.type !== "settings" && document.activeElement instanceof HTMLElement) focus = document.activeElement
-        navigate("/settings", {
-          replace: false,
-          state: {
-            settings: { route: route.type === "settings" ? source() : route, view: { type: "server", server, tab } },
-          },
-        })
+        show({ type: "server", server, tab }, false)
       },
       replaceServer(server: string, tab: SettingsServerTab = "general") {
-        navigate("/settings", {
-          replace: true,
-          state: { settings: { route: source(), view: { type: "server", server, tab } } },
-        })
+        show({ type: "server", server, tab }, true)
       },
-      openProject(input: { server: string; project: string; parent: "root" | "server"; tab?: SettingsProjectTab }) {
-        const route = layout.route()
-        if (route.type !== "settings" && document.activeElement instanceof HTMLElement) focus = document.activeElement
-        navigate("/settings", {
-          replace: false,
-          state: {
-            settings: {
-              route: route.type === "settings" ? source() : route,
-              view: {
-                type: "project",
-                ...input,
-                parent: servers().length > 1 ? "server" : "root",
-                tab: input.tab ?? "general",
-              },
-            },
+      openProject(input: { server: string; project: string; tab?: SettingsProjectTab }) {
+        show(
+          {
+            type: "project",
+            ...input,
+            parent: servers().length > 1 ? "server" : "root",
+            tab: input.tab ?? "general",
           },
-        })
+          false,
+        )
       },
       select(tab: string) {
         const current = view()
@@ -159,10 +144,7 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
               : current.type === "project" && isProjectTab(tab)
                 ? { ...current, tab }
                 : current
-        navigate("/settings", {
-          replace: true,
-          state: { settings: { route: source(), view: next } },
-        })
+        show(next, true)
       },
       back() {
         const current = view()
@@ -174,7 +156,7 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
           current.type === "server" || current.parent === "root"
             ? { type: "root", tab: current.type === "server" ? "general" : "projects" }
             : { type: "server", server: current.server, tab: "projects" }
-        navigate("/settings", { replace: true, state: { settings: { route: source(), view: parent } } })
+        show(parent, true)
       },
       close() {
         if (open()) command.trigger("common.goBack")

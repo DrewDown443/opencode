@@ -1,6 +1,6 @@
 import { Tabs } from "@opencode/ui/tabs"
 import { useDialog } from "@opencode/ui/context/dialog"
-import { createEffect, createMemo, onMount, Show, Switch, Match } from "solid-js"
+import { createEffect, createMemo, onMount, Show, Switch, Match, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useLayout } from "@/shell/state/layout"
@@ -127,7 +127,9 @@ export function SettingsScreen() {
       }}
     >
       <Switch>
-        <Match when={surface.view().type === "root"}>{<RootSettings />}</Match>
+        <Match when={surface.view().type === "root"}>
+          <RootSettings />
+        </Match>
         <Match when={surface.view().type === "server"}>
           <Show when={targetServer()}>{(server) => <ServerSettings entry={server()} />}</Show>
         </Match>
@@ -173,16 +175,7 @@ function RootSettings() {
     }
     return connectionFor(list(), layout.home.selection().server)
   })
-  const sourceCtx = useServerCtx(sourceServer)
-  const sourceDirectory = createMemo(() => {
-    const route = surface.route()
-    if (route.type === "draft") {
-      const draft = tabs.store.find((item) => item.type === "draft" && item.draftID === route.draftID)
-      return draft?.type === "draft" ? draft.directory : undefined
-    }
-    if (route.type === "session") return sourceCtx()?.data.session.get(route.sessionId)?.location.directory
-    return undefined
-  })
+  const sourceDirectory = useSettingsDirectory(sourceServer)
   const addServer = () =>
     void dialog.push(() => (
       <DialogServer mode="add" onSave={(server) => surface.openServer(ServerConnection.key(server))} />
@@ -265,7 +258,6 @@ function RootSettings() {
                   surface.openProject({
                     server: ServerConnection.key(server),
                     project: project.worktree,
-                    parent: "root",
                   })
                 }
               />
@@ -302,8 +294,7 @@ function RootSettings() {
 function ServerSettings(props: { entry: SettingsServer }) {
   const language = useLanguage()
   const surface = useSettingsSurface()
-  const tabs = useTabs()
-  const serverCtx = useServerCtx(() => props.entry.connection)
+  const activeDirectory = useSettingsDirectory(() => props.entry.connection)
   const [state, setState] = createStore({ worktreeFilterReset: 0 })
   const groups = createMemo<SettingsNavGroup[]>(() => [
     {
@@ -321,14 +312,6 @@ function ServerSettings(props: { entry: SettingsServer }) {
     if (value === "workspaces") setState("worktreeFilterReset", (current) => current + 1)
     surface.select(value)
   }
-  const activeDirectory = createMemo(() => {
-    const route = surface.route()
-    if (route.type === "session" && route.server === props.entry.key)
-      return serverCtx()?.data.session.get(route.sessionId)?.location.directory
-    if (route.type !== "draft") return undefined
-    const draft = tabs.store.find((item) => item.type === "draft" && item.draftID === route.draftID)
-    return draft?.type === "draft" && draft.server === props.entry.key ? draft.directory : undefined
-  })
 
   return (
     <SettingsNavigation
@@ -355,7 +338,6 @@ function ServerSettings(props: { entry: SettingsServer }) {
                   surface.openProject({
                     server: props.entry.key,
                     project: project.worktree,
-                    parent: "server",
                   })
                 }
               />
@@ -385,19 +367,10 @@ function ServerSettings(props: { entry: SettingsServer }) {
 function ProjectSettings(props: { server: ServerConnection.Any; project: LocalProject }) {
   const language = useLanguage()
   const surface = useSettingsSurface()
-  const tabs = useTabs()
-  const serverCtx = useServerCtx(() => props.server)
+  const activeDirectory = useSettingsDirectory(() => props.server)
   const groups = createMemo<SettingsNavGroup[]>(() => [
     { items: nestedProjectTabs.map((item) => ({ ...item, label: language.t(item.label) })) },
   ])
-  const activeDirectory = createMemo(() => {
-    const route = surface.route()
-    if (route.type === "session" && route.server === ServerConnection.key(props.server))
-      return serverCtx()?.data.session.get(route.sessionId)?.location.directory
-    if (route.type !== "draft") return undefined
-    const draft = tabs.store.find((item) => item.type === "draft" && item.draftID === route.draftID)
-    return draft?.type === "draft" && draft.server === ServerConnection.key(props.server) ? draft.directory : undefined
-  })
   return (
     <SettingsServerDataScope server={props.server} directory={props.project.worktree}>
       <LocationProvider directory={props.project.worktree}>
@@ -429,4 +402,21 @@ function ProjectSettings(props: { server: ServerConnection.Any; project: LocalPr
 
 function connectionFor(list: readonly ServerConnection.Any[], key: string | undefined) {
   return list.find((item) => ServerConnection.key(item) === key)
+}
+
+function useSettingsDirectory(server: Accessor<ServerConnection.Any | undefined>) {
+  const surface = useSettingsSurface()
+  const tabs = useTabs()
+  const serverCtx = useServerCtx(server)
+  return createMemo(() => {
+    const current = server()
+    if (!current) return undefined
+    const key = ServerConnection.key(current)
+    const route = surface.route()
+    if (route.type === "session" && route.server === key)
+      return serverCtx()?.data.session.get(route.sessionId)?.location.directory
+    if (route.type !== "draft") return undefined
+    const draft = tabs.store.find((item) => item.type === "draft" && item.draftID === route.draftID)
+    return draft?.type === "draft" && draft.server === key ? draft.directory : undefined
+  })
 }
