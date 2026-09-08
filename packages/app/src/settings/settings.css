@@ -370,11 +370,6 @@
   color: var(--v2-text-text-base);
 }
 
-.settings-section-title + [data-component="settings-list"] {
-  margin-top: 0;
-  margin-bottom: 0;
-}
-
 .settings-section-stack {
   display: flex;
   width: 100%;
@@ -1371,6 +1366,9 @@
 
 .settings-extensions-tabs[data-component="tabs-v2"][data-variant="pill"] > [data-slot="tabs-v2-list"] {
   width: min(280px, 100%);
+}
+
+.settings-subtabs[data-component="tabs-v2"][data-variant="pill"] > [data-slot="tabs-v2-list"] {
   padding-inline: 0 !important;
 }
 
@@ -1419,17 +1417,17 @@
   color: var(--v2-text-text-accent-hover) !important;
 }
 
-.settings-extensions-tabs[data-component="tabs-v2"][data-variant="pill"] > [data-slot="tabs-v2-list"]::before {
+.settings-subtabs[data-component="tabs-v2"][data-variant="pill"] > [data-slot="tabs-v2-list"]::before {
   display: none;
 }
 
-.settings-extensions-tabs[data-component="tabs-v2"][data-variant="pill"]
+.settings-subtabs[data-component="tabs-v2"][data-variant="pill"]
   > [data-slot="tabs-v2-list"]
   [data-slot="tabs-v2-trigger-wrapper"] {
   border-radius: 6px;
 }
 
-.settings-extensions-tabs[data-component="tabs-v2"][data-variant="pill"]
+.settings-subtabs[data-component="tabs-v2"][data-variant="pill"]
   > [data-slot="tabs-v2-list"]
   [data-slot="tabs-v2-trigger"] {
   padding-inline: 8px;

@@ -9,7 +9,6 @@ export interface MockServerConfig {
   provider: unknown | (() => unknown)
   integrationMethods?: Record<string, unknown[]>
   onConnectKey?: (input: { integrationID: string; body: unknown }) => void
-  onProjectUpdate?: (input: { projectID: string; body: unknown }) => void
   preferences?: Record<string, unknown>
   shells?: unknown[]
   websearchProviders?: unknown[]
@@ -268,15 +267,15 @@ function mockHandlers(config: MockServerConfig, state: { cursors: Map<string, st
           const project = config.project as typeof config.project & { canonical?: string; worktree?: string }
           return Effect.succeed([{ ...project, canonical: project.canonical ?? project.worktree ?? config.directory }])
         },
-        projectUpdate: (ctx) =>
-          Effect.sync(() => config.onProjectUpdate?.({ projectID: ctx.params.projectID, body: ctx.payload })).pipe(
-            Effect.as({
-              ...(config.project as Record<string, unknown>),
-              ...ctx.payload,
-              id: ctx.params.projectID,
-              canonical: (config.project as { canonical?: string; worktree?: string }).canonical ?? config.directory,
-            }),
-          ),
+        projectUpdate: (ctx) => {
+          const project = config.project as { canonical?: string }
+          return Effect.succeed({
+            ...project,
+            ...ctx.payload,
+            id: ctx.params.projectID,
+            canonical: project.canonical ?? config.directory,
+          })
+        },
         projectCurrent: () =>
           Effect.succeed({
             id: (config.project as { id?: string }).id,

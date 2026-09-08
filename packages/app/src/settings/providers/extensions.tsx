@@ -90,7 +90,7 @@ export const SettingsExtensions: Component = () => {
                     <div class="settings-extension-row">
                       <div class="settings-extension-lead">
                         <Icon name="mcp" class="text-v2-icon-icon-muted shrink-0" />
-                        <span class="settings-extension-name text-13-medium truncate">{item.name}</span>
+                        <span class="settings-extension-name truncate">{item.name}</span>
                       </div>
                       <Switch checked={item.enabled} onChange={(checked) => handleMcpToggle(item, checked)} hideLabel>
                         {item.name}
@@ -118,7 +118,7 @@ export const SettingsExtensions: Component = () => {
                     <div class="settings-extension-row">
                       <div class="settings-extension-lead">
                         <Icon name="cube" class="text-v2-icon-icon-muted shrink-0" />
-                        <span class="settings-extension-name text-13-medium truncate">{plugin.name}</span>
+                        <span class="settings-extension-name truncate">{plugin.name}</span>
                       </div>
                     </div>
                   )}
@@ -143,7 +143,7 @@ export const SettingsExtensions: Component = () => {
                     <div class="settings-extension-row">
                       <div class="settings-extension-lead">
                         <Icon name="post-skill" class="text-v2-icon-icon-muted shrink-0" />
-                        <span class="settings-extension-name text-13-medium truncate">{skill.name}</span>
+                        <span class="settings-extension-name truncate">{skill.name}</span>
                       </div>
                     </div>
                   )}

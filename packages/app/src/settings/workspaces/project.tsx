@@ -118,7 +118,7 @@ export const SettingsProjectGeneral: Component<{
                       >
                         <ProjectAvatar
                           fallback=""
-                          variant={getProjectAvatarVariant(color)}
+                          variant={color}
                           class="!size-5 [&_[data-slot=project-avatar-surface]]:!rounded-[6px]"
                         />
                         <Show when={selected()}>
@@ -161,7 +161,7 @@ export const SettingsProjectGeneral: Component<{
 }
 
 function inlineVariables(text: string) {
-  return text.split(/(\$[A-Z][A-Z0-9_]*)/g).map((part, index) =>
-    index % 2 === 0 ? part : <code dir="ltr">{part}</code>,
-  )
+  return text
+    .split(/(\$[A-Z][A-Z0-9_]*)/g)
+    .map((part, index) => (index % 2 === 0 ? part : <code dir="ltr">{part}</code>))
 }

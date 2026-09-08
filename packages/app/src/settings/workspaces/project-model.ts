@@ -1,4 +1,5 @@
 import { getFilename } from "@opencode/util/path"
+import type { ProjectUpdateInput } from "@opencode/client/promise"
 import { createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useGlobal } from "@/runtime/server/runtime"
@@ -7,11 +8,7 @@ import type { LocalProject } from "@/shell/state/layout"
 import { ServerConnection } from "@/runtime/server/registry"
 import { showToast } from "@/shell/notifications/toast"
 
-type ProjectPatch = {
-  name?: string
-  icon?: { color?: string; override?: string }
-  commands?: { start?: string }
-}
+type ProjectPatch = Pick<ProjectUpdateInput, "name" | "icon" | "commands">
 
 export function createEditProjectModel(props: { project: LocalProject; server: ServerConnection.Any }) {
   const language = useLanguage()
@@ -39,25 +36,23 @@ export function createEditProjectModel(props: { project: LocalProject; server: S
 
   const persist = (patch: ProjectPatch, complete: () => void) => {
     setStore("saving", (value) => value + 1)
-    const task = queue.then(async () => {
-      if (props.project.id && props.project.id !== "global") {
-        const project = await serverCtx().sdk.api.project.update({ projectID: props.project.id, ...patch })
-        serverCtx().sync.project.update(project)
-        complete()
-        return
-      }
-      serverCtx().sync.project.meta(props.project.worktree, patch)
-      complete()
-    })
-    queue = task.catch(() => undefined)
-    void task
-      .catch((error: unknown) =>
+    queue = queue
+      .then(async () => {
+        if (props.project.id && props.project.id !== "global") {
+          const project = await serverCtx().sdk.api.project.update({ projectID: props.project.id, ...patch })
+          serverCtx().sync.project.update(project)
+          return
+        }
+        serverCtx().sync.project.meta(props.project.worktree, patch)
+      })
+      .then(complete)
+      .catch((error: unknown) => {
         showToast({
           variant: "error",
           title: language.t("common.requestFailed"),
           description: error instanceof Error ? error.message : language.t("common.requestFailed"),
-        }),
-      )
+        })
+      })
       .finally(() => setStore("saving", (value) => value - 1))
   }
 

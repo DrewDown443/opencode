@@ -136,7 +136,6 @@ export function createHomeProjectsController(home: HomeController) {
         settings.openProject({
           server: ServerConnection.key(conn),
           project: project.worktree,
-          parent: global.servers.list().length > 1 ? "server" : "root",
         })
       },
       unseenCount: (conn: ServerConnection.Any, project: LocalProject) => {
