@@ -21,12 +21,10 @@ import { SettingsRow } from "@/settings/row"
 import {
   createAppearanceSettingsController,
   createShellOptions,
-  createShellSettingsController,
   type AppearanceSettingsController,
   type ShellSettingsController,
 } from "./controllers"
 import "@/settings/settings.css"
-import { ServerConnection } from "@/runtime/server/registry"
 
 const schemeOptions: ("system" | "light" | "dark")[] = ["system", "light", "dark"]
 const fontSettings = {
@@ -97,7 +95,7 @@ const WorkspaceDestinationSetting: Component = () => {
   )
 }
 
-const ShellSetting: Component<{ controller: ShellSettingsController }> = (props) => {
+export const ShellSetting: Component<{ controller: ShellSettingsController }> = (props) => {
   const language = useLanguage()
   const options = createMemo(() =>
     createShellOptions({
@@ -295,15 +293,12 @@ const LanguageSetting = () => {
   )
 }
 
-export const SettingsGeneral: Component<{
-  server?: ServerConnection.Any
-}> = (props) => {
+export const SettingsGeneral: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
   const settings = useSettings()
   const mobile = createMediaQuery("(max-width: 767px)")
   const updater = useUpdaterAction()
-  const shell = createShellSettingsController(() => props.server)
   const desktop = createMemo(() => platform.platform === "desktop")
 
   const [pinchZoom, { mutate: setPinchZoom }] = createResource(
@@ -328,7 +323,6 @@ export const SettingsGeneral: Component<{
         <WorkspaceDestinationSetting />
         <AutoApprovePermissionsSetting />
 
-        <ShellSetting controller={shell} />
         <TerminalPlacementSetting />
         <FollowUpBehaviorSetting />
 

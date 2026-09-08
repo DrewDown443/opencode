@@ -9,8 +9,6 @@ import { createMemo, type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useServerSDK } from "@/runtime/server/client"
 import { DialogConnectProvider, useProviderConnectController } from "@/providers/connect/dialog"
-import { SettingsServerScope } from "@/settings/server-scope"
-import { InlineServerSelect } from "@/settings/server-select"
 import { SettingsList } from "@/settings/list"
 import "@/settings/settings.css"
 
@@ -44,11 +42,7 @@ export const SettingsProviders: Component<{
 
   const connect = (provider?: string) => {
     providerConnect.select(provider)
-    void dialog.show(() => (
-      <SettingsServerScope directory={props.directory}>
-        <DialogConnectProvider directory={props.directory} controller={providerConnect} />
-      </SettingsServerScope>
-    ))
+    void dialog.show(() => <DialogConnectProvider directory={props.directory} controller={providerConnect} />)
   }
 
   const connected = createMemo(() => {
@@ -134,7 +128,6 @@ export const SettingsProviders: Component<{
             <h2 class="settings-tab-title">{language.t("settings.providers.title")}</h2>
             <span class="text-11-regular text-v2-text-text-muted">{language.t("settings.providers.description")}</span>
           </div>
-          <InlineServerSelect />
         </div>
       </div>
 
