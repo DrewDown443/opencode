@@ -236,6 +236,15 @@ for (const scenario of ["visible-output", "hidden-output", "full-scrollback-tear
         const close = page.locator(`[data-titlebar-tab-slot]:has(a[href="${href}"]) [data-component="icon-button-v2"]`)
         await expect(close).toBeVisible()
         const cpuBefore = await cdp.send("Performance.getMetrics")
+        const retained = await page.evaluate(() => {
+          const term = window.terminalProbe.term!
+          const buffer = term.buffer.normal
+          const start = Math.max(0, buffer.length - term.rows - 2_000)
+          return Array.from(
+            { length: buffer.length - start },
+            (_, index) => buffer.getLine(start + index)?.translateToString(true) ?? "",
+          ).join("\n")
+        })
         const start = await page.evaluate(() => performance.now())
         await close.click()
         await expect(page).toHaveURL("/")
@@ -256,9 +265,11 @@ for (const scenario of ["visible-output", "hidden-output", "full-scrollback-tear
             cpuBefore.metrics.find((x) => x.name === "TaskDuration")!.value) *
           1000
         const snapshot = await page.evaluate(() => window.terminalProbe.serialized[0].value)
-        expect(Array.from(snapshot.matchAll(/-(\d{5})\.test\.ts/g), (match) => Number(match[1]))).toEqual(
-          Array.from({ length: 12_000 - produced.firstRecord }, (_, index) => produced.firstRecord + index),
-        )
+        const records = (text: string) => Array.from(text.matchAll(/-(\d{5})\.test\.ts/g), (match) => Number(match[1]))
+        const expected = records(retained)
+        const actual = records(snapshot)
+        expect(actual.length).toBe(expected.length)
+        expect(actual.every((record, index) => record === expected[index])).toBe(true)
         expect(snapshot).toContain("TERMINAL_WORKLOAD_DONE")
         await writeFile(
           path.join(

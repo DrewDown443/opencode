@@ -28,7 +28,9 @@ resizing reduces the effective row capacity. The report records actual retained
 rows and the first retained fixture record rather than assuming 10,000 rows. Completion
 requires the final marker in Ghostty and completion of its write callbacks, not
 just WebSocket delivery. Teardown requires Home readiness and the final serialized
-snapshot. Input, focus, resizing, and native process survival are checked.
+snapshot, capped at the production limit of 2,000 scrollback rows plus the screen.
+The snapshot must contain the same ordered workload records as that retained tail.
+Input, focus, resizing, and native process survival are checked.
 
 `probe.ts` is included only by this benchmark build. It observes actual writes,
 renderer calls, and serialization. Chrome `TaskDuration` measures renderer task
