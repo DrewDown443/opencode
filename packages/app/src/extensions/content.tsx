@@ -1,17 +1,17 @@
-import { createMemo, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import type { RegisteredPanel } from "./provider"
 
 /** Related instances can retain a shared sidebar while switching their document content. */
 export function ExtensionPanelContent(props: { panels: readonly RegisteredPanel[]; active: string | undefined }) {
   const selected = createMemo(() => props.panels.find((panel) => panel.key === props.active))
-  const content = createMemo(
-    () => {
-      const panel = selected()
-      return panel && { key: `${panel.plugin}/${panel.props.group ?? panel.key}`, render: panel.render }
-    },
-    undefined,
-    { equals: (previous, next) => previous?.key === next?.key },
-  )
+  const [content, setContent] = createSignal<{ key: string; render: RegisteredPanel["render"] }>()
+  // Resolve after declarations update. Preview replacement removes and inserts
+  // panel declarations in the same render, and must retain the shared content.
+  createEffect(() => {
+    const panel = selected()
+    const key = panel && `${panel.session.key}/${panel.plugin}/${panel.props.group ?? panel.key}`
+    setContent((previous) => previous?.key === key ? previous : panel && { key: key!, render: panel.render })
+  })
   return (
     <Show when={content()} keyed>
       {(content) => (

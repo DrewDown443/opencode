@@ -23,7 +23,6 @@ import { useTabs, tabKey } from "@/shell/tabs/tabs"
 import { useCurrentRoute } from "@/shell/state/layout"
 import { useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
-import en from "@/runtime/i18n/en"
 import { persisted, Persist } from "@/runtime/persistence/storage"
 import { extensionTabKey } from "./keys"
 import { showToast } from "@/shell/notifications/toast"
@@ -198,8 +197,7 @@ function createHost() {
           locale: language.locale,
           intl: language.intl,
           plural: (key, count, params) => language.plural(key as Parameters<typeof language.plural>[0], count, params),
-          t: (key, params) =>
-            Object.hasOwn(en, key) ? language.t(key as Parameters<typeof language.t>[0], params) : key,
+          t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params) ?? key,
         },
         commands: {
           register(values) {
