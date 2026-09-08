@@ -19,6 +19,7 @@ export function createSessionServices(session: SessionModel): SessionServices {
   const extensions = useOptionalDesktopExtensions()
   const server = useServer()
   return {
+    display: { wrapDiff: settings.general.mobileDiffWrap },
     files: {
       ...file,
       get directory() {

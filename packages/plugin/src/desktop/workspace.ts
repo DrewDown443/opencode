@@ -120,6 +120,8 @@ export interface SessionView {
 
 /** Shared workspace/draft capabilities. Feature queries and presentation remain extension-owned. */
 export interface SessionServices {
+  /** Shared diff presentation preference, also used by built-in session surfaces. */
+  readonly display: { wrapDiff(): boolean }
   readonly files: Files
   readonly annotations: Annotations
   readonly draft: Draft
