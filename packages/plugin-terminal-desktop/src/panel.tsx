@@ -95,9 +95,11 @@ export function TerminalPanel(props: AuxiliaryPresentation) {
     }
 
     const workspace = workspaceKey()
-    if (!terminal.ready() || terminal.all().length !== 0 || store.autoCreated === workspace) return
-    terminal.new()
+    if (!terminal.ready() || store.autoCreated === workspace) return
+    // Adopt restored terminals before observing exits or closes. Otherwise the
+    // last restored terminal can be replaced while its dock is still closing.
     setStore("autoCreated", workspace)
+    if (terminal.all().length === 0) terminal.new()
   })
 
   createEffect(
