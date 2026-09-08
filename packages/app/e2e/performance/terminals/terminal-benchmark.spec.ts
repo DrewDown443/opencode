@@ -312,6 +312,7 @@ for (const scenario of ["visible-output", "hidden-output", "full-scrollback-tear
         await expect
           .poll(async () => sizes.at(-1)?.cols === (await page.evaluate(() => window.terminalProbe.term!.cols)))
           .toBe(true)
+        await expect(page.locator('#terminal-panel [data-slot="tabs-list"]')).toHaveCSS("padding-inline-start", "12px")
         expect(closed).toBe(0)
       }
       if (process.env.TERMINAL_SCREENSHOTS && scenario !== "full-scrollback-teardown") {

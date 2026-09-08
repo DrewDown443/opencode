@@ -1,3 +1,6 @@
+/* Extensions can load this primitive before the host's root stylesheet. */
+@layer theme, base, components, utilities;
+
 @layer components {
   [data-slot="auxiliary-panel"][data-size-animated="true"][data-opened="true"] {
     animation: auxiliary-panel-size-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
