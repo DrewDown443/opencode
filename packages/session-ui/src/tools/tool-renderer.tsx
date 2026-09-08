@@ -16,24 +16,24 @@ import {
 import stripAnsi from "strip-ansi"
 import { Dynamic } from "solid-js/web"
 import { type SessionSummary, useData } from "../context"
-import { useFileComponent } from "@opencode-ai/ui/context/file"
-import { type UiI18n, useI18n } from "@opencode-ai/ui/context/i18n"
+import { useFileComponent } from "@opencode/ui/context/file"
+import { type UiI18n, useI18n } from "@opencode/ui/context/i18n"
 import { BasicTool, GenericTool } from "../components/basic-tool"
-import { Accordion } from "@opencode-ai/ui/accordion"
-import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
-import { Collapsible } from "@opencode-ai/ui/collapsible"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Icon, type IconProps } from "@opencode-ai/ui/icon"
+import { Accordion } from "@opencode/ui/accordion"
+import { StickyAccordionHeader } from "@opencode/ui/sticky-accordion-header"
+import { Collapsible } from "@opencode/ui/collapsible"
+import { FileIcon } from "@opencode/ui/file-icon"
+import { Icon, type IconProps } from "@opencode/ui/icon"
 import { ToolErrorCard } from "../components/tool-error-card"
-import { DiffChanges } from "@opencode-ai/ui/diff-changes"
+import { DiffChanges } from "@opencode/ui/diff-changes"
 import { Markdown } from "../components/markdown"
 import { createMarkdownImages } from "../components/markdown-image"
 import { useMarkdown } from "../context/markdown"
-import { getDirectory, getFilename } from "@opencode-ai/util/path"
-import { checksum } from "@opencode-ai/util/encode"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+import { getDirectory, getFilename } from "@opencode/util/path"
+import { checksum } from "@opencode/util/encode"
+import { Tooltip } from "@opencode/ui/tooltip"
+import { IconButton } from "@opencode/ui/icon-button"
+import { TextShimmer } from "@opencode/ui/text-shimmer"
 import { changedFileDiff, patchFileGroups } from "../components/apply-patch-file"
 import { animate } from "motion"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
@@ -41,7 +41,7 @@ import type {
   SessionMessageAssistantReasoning,
   SessionMessageAssistantTool,
   SessionMessageShell,
-} from "@opencode-ai/client/promise"
+} from "@opencode/client/promise"
 import {
   currentToolError,
   currentToolHasLoadedFiles,
@@ -51,6 +51,7 @@ import {
   executeToolFailed,
 } from "../message/current-tool-state"
 import { AssistantReasoningContent, writeClipboard } from "../message/message-content"
+import { followShellOutput } from "./shell-output"
 
 function ShellSubmessage(props: { text: string; animate?: boolean }) {
   let widthRef: HTMLSpanElement | undefined
@@ -1629,33 +1630,9 @@ ToolRegistry.register({
     createEffect(() => {
       if (saved() !== undefined) return
       const id = props.metadata.shellID
-      const shellOutput = data.shellOutput
-      if (typeof id !== "string" || !shellOutput) return
-      const directory = data.directory
-      const running = pending()
-      let cursor = 0
-      let loading = false
-      let disposed = false
-      const load = async () => {
-        if (loading) return
-        loading = true
-        do {
-          const response = await shellOutput({ id, location: { directory }, cursor }).catch(() => undefined)
-          if (disposed || !response) break
-          setStreamed((output) => (cursor === 0 ? response.data.output : output + response.data.output))
-          if (response.data.cursor <= cursor) break
-          cursor = response.data.cursor
-          if (running || cursor >= response.data.size) break
-        } while (!disposed)
-        loading = false
-      }
-      void load()
-      // Refresh the final snapshot on exit, but poll only while the shell is live.
-      const interval = running ? setInterval(() => void load(), 1_000) : undefined
-      onCleanup(() => {
-        disposed = true
-        clearInterval(interval)
-      })
+      const load = data.shellOutput
+      if (typeof id !== "string" || !load) return
+      onCleanup(followShellOutput({ id, directory: data.directory, running: pending(), load, onOutput: setStreamed }))
     })
     const command = () => {
       if (typeof props.input.command === "string") return props.input.command

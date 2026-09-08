@@ -1,6 +1,6 @@
-import { Session } from "@opencode-ai/core/session"
-import type { Snapshot } from "@opencode-ai/core/snapshot"
-import { MessageNotFoundError, SessionNotFoundError, UnknownError } from "@opencode-ai/protocol/errors"
+import { Session } from "@opencode/core/session"
+import type { Snapshot } from "@opencode/core/snapshot"
+import { MessageNotFoundError, SessionNotFoundError, UnknownError } from "@opencode/protocol/errors"
 import { Effect } from "effect"
 
 export function missingSession(error: Session.NotFoundError) {
