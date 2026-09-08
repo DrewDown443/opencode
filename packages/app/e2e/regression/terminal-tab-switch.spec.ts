@@ -28,6 +28,7 @@ test("keeps terminal visibility per tab and the PTY alive across tab switches", 
   const terminal = page.locator('[data-component="terminal"]')
   const terminalPanel = page.locator('[data-component="terminal-panel"]')
   await expect(terminal).toBeVisible()
+  await expect(terminalPanel.locator('[data-slot="tabs-list"]')).toHaveCSS("padding-inline-start", "12px")
   await expect(terminalPanel).toHaveAttribute("data-size-animated", "true")
   await expect(terminalPanel).toHaveCSS("height", "300px")
   await expect.poll(() => connections.length).toBe(1)
