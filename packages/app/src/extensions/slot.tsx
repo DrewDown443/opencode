@@ -56,7 +56,7 @@ export function ExtensionSlot<Path extends SlotPath>(props: ParentProps<{ path: 
                   const session = (props.input as PanelInput).session
                   onCleanup(
                     host.register({
-                      key: extensionTabKey(claim.plugin, panel.id),
+                      key: panel.reference ?? extensionTabKey(claim.plugin, panel.id),
                       plugin: claim.plugin,
                       session,
                       props: panel,

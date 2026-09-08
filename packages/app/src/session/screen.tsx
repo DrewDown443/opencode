@@ -35,6 +35,7 @@ import { SessionReviewToggle } from "./header/session-header-actions"
 import { createAnimatedPresence } from "@/runtime/animated-presence"
 import { createSessionBrowser } from "./browser/model"
 import { useExtensionPanels } from "@/extensions/session"
+import { createSessionServices } from "@/extensions/workspace"
 
 const SessionMobileFiles = lazy(async () => {
   const { SessionMobileFiles } = await import("./files/session-mobile-files")
@@ -51,6 +52,8 @@ export function SessionScreen(props: { session: SessionModel }) {
   const isDesktop = session.isDesktop
   const browser = createSessionBrowser(session)
   const extensions = useExtensionPanels({
+    services: createSessionServices(session),
+    active: session.tabs.activeTab,
     serverID: () => server.key,
     sessionID: session.identity.sessionID,
     tabs: session.layout.tabs,
@@ -256,6 +259,7 @@ export function SessionScreen(props: { session: SessionModel }) {
             <Show when={messagesReady() ? session.identity.params.id : undefined} keyed>
               {(_id) => (
                 <MessageTimeline
+                  headerActions={extensions.header()}
                   hideHeader={!isDesktop()}
                   session={session}
                   background={composer.requests.background}

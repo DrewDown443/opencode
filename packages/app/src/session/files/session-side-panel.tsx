@@ -51,6 +51,7 @@ import { SessionBrowserPane } from "@/session/browser/pane"
 import type { createSessionBrowser } from "@/session/browser/model"
 import type { SessionExtensions } from "@/extensions/session"
 import { isExtensionTab } from "@/extensions/keys"
+import { ExtensionPanelContent } from "@/extensions/content"
 
 type ReviewDiff = FileDiffInfo
 type RenderDiff = FileDiffInfo
@@ -180,6 +181,8 @@ export function SessionSidePanel(props: {
     fileBrowser: () => true,
     browser: props.browser.attached,
     extensions: extensions.keys,
+    defaultPanel: extensions.defaultPanel,
+    canClose: extensions.canClose,
   })
   const contextOpen = tabState.contextOpen
   const openFileOpen = tabState.openFileOpen
@@ -236,7 +239,7 @@ export function SessionSidePanel(props: {
       active !== "context" &&
       active !== "empty" &&
       !isSessionBrowserTab(active) &&
-      !isExtensionTab(active)
+      !extensions.keys().includes(active)
     )
   })
   const openFileKeybind = createMemo(() => command.keybindParts("file.open"))
@@ -377,13 +380,13 @@ export function SessionSidePanel(props: {
                                   />
                                 }
                               >
-                                <Match when={isExtensionTab(tab)}>
+                                <Match when={extensions.keys().includes(tab)}>
                                   <Show when={extensions.panels().find((panel) => panel.key === tab)}>
                                     {(panel) => (
                                       <SortableTab
                                         tab={tab}
                                         index={tabs().all().indexOf(tab)}
-                                        onTabClose={tabs().close}
+                                        onTabClose={panel().props.closable === false ? undefined : tabs().close}
                                       >
                                         <div class="flex items-center gap-1.5">
                                           <Show when={panel().props.loading} fallback={panel().props.icon}>
@@ -588,18 +591,7 @@ export function SessionSidePanel(props: {
                         </Tabs.Content>
                       </Show>
 
-                      <Show when={extensions.panels().find((panel) => panel.key === activeTab())} keyed>
-                        {(panel) => (
-                          <div
-                            role="tabpanel"
-                            data-slot="tabs-content"
-                            class="h-full min-h-0 overflow-hidden flex flex-col"
-                            aria-label={panel.props.title}
-                          >
-                            {panel.render()}
-                          </div>
-                        )}
-                      </Show>
+                      <ExtensionPanelContent panels={extensions.panels()} active={activeTab()} />
 
                       <Show when={props.browser.opened()}>
                         <div

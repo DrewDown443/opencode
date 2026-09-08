@@ -1,7 +1,7 @@
 import { createEffect, createMemo, on, onCleanup, Show } from "solid-js"
 import { useOptionalDesktopExtensions } from "./provider"
-import { isExtensionTab } from "./keys"
 import { ExtensionSlot } from "./slot"
+import type { SessionServices } from "@opencode/plugin/desktop/workspace"
 
 export function useExtensionPanels(input: {
   serverID: () => string
@@ -14,6 +14,8 @@ export function useExtensionPanels(input: {
     close(id: string): void
   }
   open(): void
+  services?: SessionServices
+  active?: () => string | undefined
 }) {
   const host = useOptionalDesktopExtensions()
   const session = createMemo(() =>
@@ -26,16 +28,21 @@ export function useExtensionPanels(input: {
     const current = session()
     if (!current || !host) return
     onCleanup(
-      host.bind(current, {
-        open(id) {
-          input.open()
-          const tabs = input.tabs()
-          if (!tabs.all().includes(id)) tabs.setAll([...tabs.all(), id])
-          tabs.setActive(id)
+      host.bind(
+        current,
+        {
+          open(id) {
+            input.open()
+            const tabs = input.tabs()
+            if (!tabs.all().includes(id)) tabs.setAll([...tabs.all(), id])
+            tabs.setActive(id)
+          },
+          close: (id) => input.tabs().close(id),
+          active: () => input.active?.() ?? input.tabs().active(),
+          visible: () => input.services?.view.panel.opened() ?? true,
         },
-        close: (id) => input.tabs().close(id),
-        active: () => input.tabs().active(),
-      }),
+        input.services,
+      ),
     )
   })
   createEffect(
@@ -48,7 +55,12 @@ export function useExtensionPanels(input: {
         // remove contributions observed disappearing during this route lifetime.
         const removed = new Set(previous?.filter((key) => !keys.includes(key)))
         const current = tabs.all().filter((key) => !removed.has(key))
-        const added = keys.filter((key) => !old.has(key) && !current.includes(key))
+        const added = keys.filter(
+          (key) =>
+            !old.has(key) &&
+            !current.includes(key) &&
+            panels().find((panel) => panel.key === key)?.props.initial !== "closed",
+        )
         if (added.length || current.length !== tabs.all().length) tabs.setAll([...current, ...added])
       },
     ),
@@ -58,7 +70,7 @@ export function useExtensionPanels(input: {
       () => input.tabs().all(),
       (current, previous) => {
         previous
-          ?.filter((key) => isExtensionTab(key) && !current.includes(key))
+          ?.filter((key) => !current.includes(key))
           .forEach((key) =>
             panels()
               .find((panel) => panel.key === key)
@@ -79,6 +91,8 @@ export function useExtensionPanels(input: {
   return {
     panels,
     keys: () => panels().map((panel) => panel.key),
+    canClose: (key: string) => panels().find((panel) => panel.key === key)?.props.closable !== false,
+    defaultPanel: () => panels().find((panel) => panel.props.default)?.key,
     hasActions: () => {
       const value = host?.resolved().slotted.get("session.panel.actions")
       return (
@@ -94,6 +108,26 @@ export function useExtensionPanels(input: {
     actions: () => (
       <Show when={session()} keyed>
         {(session) => <ExtensionSlot path="session.panel.actions" input={{ session }} />}
+      </Show>
+    ),
+    toolbar: () => (
+      <Show when={session()} keyed>
+        {(session) => <ExtensionSlot path="session.panel.toolbar" input={{ session }} />}
+      </Show>
+    ),
+    tools: () => (
+      <Show when={session()} keyed>
+        {(session) => <ExtensionSlot path="session.panel.tools" input={{ session }} />}
+      </Show>
+    ),
+    sidebar: () => (
+      <Show when={session()} keyed>
+        {(session) => <ExtensionSlot path="session.sidebar" input={{ session }} />}
+      </Show>
+    ),
+    header: () => (
+      <Show when={session()} keyed>
+        {(session) => <ExtensionSlot path="session.header.actions" input={{ session }} />}
       </Show>
     ),
   }

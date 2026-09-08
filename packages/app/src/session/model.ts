@@ -89,6 +89,16 @@ export function useSessionModel() {
       extensions?.state.panels
         .filter((panel) => panel.session.sessionID === sessionID() && panel.session.server.id === server.key)
         .map((panel) => panel.key) ?? [],
+    defaultPanel: () =>
+      extensions?.state.panels.find(
+        (panel) =>
+          panel.session.sessionID === sessionID() && panel.session.server.id === server.key && panel.props.default,
+      )?.key,
+    canClose: (key) =>
+      extensions?.state.panels.find(
+        (panel) =>
+          panel.session.sessionID === sessionID() && panel.session.server.id === server.key && panel.key === key,
+      )?.props.closable !== false,
     fileBrowser: () => isDesktop() && !!sessionID(),
     // Same flag the side panel uses, so keyboard tab commands see the browser tab the panel shows.
     browser: () => {

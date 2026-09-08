@@ -26,6 +26,8 @@ import { useLanguage } from "@/runtime/i18n/language"
 import en from "@/runtime/i18n/en"
 import { persisted, Persist } from "@/runtime/persistence/storage"
 import { extensionTabKey } from "./keys"
+import { showToast } from "@/shell/notifications/toast"
+import type { SessionServices } from "@opencode/plugin/desktop/workspace"
 
 export type Contribution = Claim<{ context: Context; when?: () => boolean; render: SlotClaim["render"] }>
 export type RegisteredPanel = {
@@ -35,7 +37,7 @@ export type RegisteredPanel = {
   props: PanelProps
   render: () => JSX.Element
 }
-type PanelHost = { open(id: string): void; close(id: string): void; active(): string | undefined }
+type PanelHost = { open(id: string): void; close(id: string): void; active(): string | undefined; visible?(): boolean }
 const HostContext = createContext<ReturnType<typeof createHost>>()
 
 export function DesktopExtensionsProvider(props: ParentProps) {
@@ -63,6 +65,7 @@ function createHost() {
     claims: [] as Contribution[],
     panels: [] as RegisteredPanel[],
     sessions: [] as SessionContext[],
+    services: {} as Record<string, SessionServices | undefined>,
   })
   const sessions = new Map<string, SessionContext>()
   const hosts = new Map<string, PanelHost>()
@@ -78,6 +81,10 @@ function createHost() {
         "session.panel",
         "session.panel.actions",
         "session.composer.top",
+        "session.header.actions",
+        "session.panel.toolbar",
+        "session.panel.tools",
+        "session.sidebar",
       ]),
       claims: state.claims.filter((claim) => claim.render.when?.() ?? true),
     }),
@@ -103,6 +110,7 @@ function createHost() {
       const data = global.ensureServerCtx(connection)
       const server = {
         id: tab.server,
+        local: ServerConnection.local(connection),
         get client() {
           return data.sdk.api
         },
@@ -124,6 +132,9 @@ function createHost() {
           },
           get location() {
             return data.data.session.get(id)?.location
+          },
+          get services() {
+            return state.services[key]
           },
         })
       })
@@ -165,6 +176,19 @@ function createHost() {
       const context: Context = {
         app: { version: platform.version, windowID: platform.windowID, native: !!platform.extensions },
         lifecycle,
+        platform: {
+          ...platform,
+          async saveFile(options, content) {
+            if (platform.saveFile) return platform.saveFile(options, content)
+            const url = URL.createObjectURL(new Blob([content], { type: "application/octet-stream" }))
+            const link = document.createElement("a")
+            link.href = url
+            link.download = options.defaultPath ?? "download"
+            link.click()
+            URL.revokeObjectURL(url)
+            return true
+          },
+        },
         sessions: { list: () => state.sessions, current },
         storage: {
           store: (key, options) => stateFor(id, key, options.initial, true),
@@ -172,6 +196,8 @@ function createHost() {
         },
         i18n: {
           locale: language.locale,
+          intl: language.intl,
+          plural: (key, count, params) => language.plural(key as Parameters<typeof language.plural>[0], count, params),
           t: (key, params) =>
             Object.hasOwn(en, key) ? language.t(key as Parameters<typeof language.t>[0], params) : key,
         },
@@ -181,7 +207,7 @@ function createHost() {
               createRoot((dispose) => {
                 commands.register(`${id}/${nextClaim++}`, () =>
                   values().map((command) => ({
-                    id: `${id}.${command.id}`,
+                    id: command.reference ?? `${id}.${command.id}`,
                     title: command.title,
                     description: command.description,
                     category: command.group,
@@ -208,6 +234,10 @@ function createHost() {
           },
         },
         ui: {
+          toast: {
+            show: (options) =>
+              showToast({ title: options.title, description: options.message, variant: options.variant }),
+          },
           slot(claim) {
             const placements = ["append", "prepend", "before", "after", "replace"] as const
             const kinds = placements.filter((kind) => claim[kind] !== undefined)
@@ -224,7 +254,10 @@ function createHost() {
           },
           panel: {
             open(localID, session) {
-              const key = extensionTabKey(id, localID)
+              const panel = state.panels.find(
+                (panel) => panel.plugin === id && panel.props.id === localID && panel.session.key === session.key,
+              )
+              const key = panel?.key ?? extensionTabKey(id, localID)
               const host = hosts.get(session.key)
               if (!host || !state.panels.some((panel) => panel.session.key === session.key && panel.key === key))
                 return false
@@ -232,13 +265,28 @@ function createHost() {
               return true
             },
             close(localID, session) {
-              const key = extensionTabKey(id, localID)
+              const key =
+                state.panels.find(
+                  (panel) => panel.plugin === id && panel.props.id === localID && panel.session.key === session.key,
+                )?.key ?? extensionTabKey(id, localID)
               const host = hosts.get(session.key)
               if (!host) return false
               host.close(key)
               return true
             },
-            selected: (localID, session) => hosts.get(session.key)?.active() === extensionTabKey(id, localID),
+            selected: (localID, session) => {
+              const panel = state.panels.find(
+                (panel) => panel.plugin === id && panel.props.id === localID && panel.session.key === session.key,
+              )
+              return !!panel && hosts.get(session.key)?.active() === panel.key
+            },
+            visible: (localID, session) => {
+              const panel = state.panels.find(
+                (panel) => panel.plugin === id && panel.props.id === localID && panel.session.key === session.key,
+              )
+              const host = hosts.get(session.key)
+              return !!panel && host?.active() === panel.key && (host.visible?.() ?? true)
+            },
           },
         },
       }
@@ -274,10 +322,14 @@ function createHost() {
     current,
     transport: platform.extensions,
     zoom: () => platform.webviewZoom?.() ?? 1,
-    bind(session: SessionContext, host: PanelHost) {
+    bind(session: SessionContext, host: PanelHost, services?: SessionServices) {
       hosts.set(session.key, host)
+      setState("services", session.key, services)
       return () => {
-        if (hosts.get(session.key) === host) hosts.delete(session.key)
+        if (hosts.get(session.key) === host) {
+          hosts.delete(session.key)
+          setState("services", session.key, undefined)
+        }
       }
     },
     register(panel: RegisteredPanel) {
