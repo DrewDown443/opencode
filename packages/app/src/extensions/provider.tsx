@@ -35,6 +35,7 @@ export type RegisteredPanel = {
   session: SessionContext
   props: PanelProps
   render: () => JSX.Element
+  icon: () => JSX.Element
 }
 type PanelHost = { open(id: string): void; close(id: string): void; active(): string | undefined; visible?(): boolean }
 const HostContext = createContext<ReturnType<typeof createHost>>()

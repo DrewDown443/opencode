@@ -54,17 +54,19 @@ export function ExtensionSlot<Path extends SlotPath>(props: ParentProps<{ path: 
                 register(panel) {
                   const owner = getOwner()
                   const session = (props.input as PanelInput).session
+                  const render = (value: () => JSX.Element) => {
+                    const mounted = createRoot((dispose) => ({ dispose, view: value() }), owner)
+                    onCleanup(mounted.dispose)
+                    return mounted.view
+                  }
                   onCleanup(
                     host.register({
                       key: panel.reference ?? extensionTabKey(claim.plugin, panel.id),
                       plugin: claim.plugin,
                       session,
                       props: panel,
-                      render: () => {
-                        const mounted = createRoot((dispose) => ({ dispose, view: panel.children }), owner)
-                        onCleanup(mounted.dispose)
-                        return mounted.view
-                      },
+                      render: () => render(() => panel.children),
+                      icon: () => render(() => panel.icon),
                     }),
                   )
                 },

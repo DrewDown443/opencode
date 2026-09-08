@@ -389,7 +389,7 @@ export function SessionSidePanel(props: {
                                         onTabClose={panel().props.closable === false ? undefined : tabs().close}
                                       >
                                         <div class="flex items-center gap-1.5">
-                                          <Show when={panel().props.loading} fallback={panel().props.icon}>
+                                          <Show when={panel().props.loading} fallback={panel().icon()}>
                                             <Loader />
                                           </Show>
                                           <span class="max-w-40 truncate" dir="auto">
