@@ -1,6 +1,6 @@
 # Desktop extensions — exploratory API
 
-This draft adds a renderer entrypoint at `@opencode/plugin/desktop` and a trusted main entrypoint at `@opencode/plugin/desktop/main`. Built-in/static registrations run through the same contracts external packages can import. Installing and resolving arbitrary third-party renderer packages is a follow-up; this draft does not add a second package manager or a sandbox.
+This draft adds a renderer entrypoint at `@opencode/plugin/desktop` and a trusted main entrypoint at `@opencode/plugin/desktop/main`. Built-in registrations and installed `.ocdx` archives run through the same contracts. Settings → Extensions → Desktop ports the OCDX manager: browse/drop archives, install from a URL, enable/disable, and reload across open windows.
 
 ## Contributions
 
@@ -25,18 +25,17 @@ notifications, file export, and available native path actions.
 
 ```tsx
 import { Plugin } from "@opencode/plugin/desktop"
-import { Panel } from "@opencode/plugin/desktop/solid"
-import { Button } from "@opencode/ui/button"
+import { Panel, NativeSurface } from "@opencode/plugin/desktop/solid"
 
 export default Plugin.define({
-  id: "example.inspector",
+  id: "opencode.browser",
   setup(ctx) {
     ctx.ui.slot({
       append: "session.panel",
       when: () => available(),
       render: ({ session }) => (
-        <Panel id="inspector" title={title()} onClose={close}>
-          <Inspector session={session} />
+        <Panel id={tab.id} title={tab.title} onClose={close}>
+          <NativeSurface id={surfaceID} />
         </Panel>
       ),
     })
@@ -57,6 +56,29 @@ Use the host's UI components directly. `@opencode/ui/layout` supplies shared lay
 - `commands.register` accepts a reactive command list and registers with the existing command palette, keyboard, and slash-command host. IDs are plugin-scoped.
 - `i18n` resolves existing host keys through the active language. Extension-owned translation catalogs are a follow-up.
 
+## Installation and live reload
+
+The manager stores manifests, archive files, enabled state, and activation generations
+in Desktop's SQLite database. Installing a replacement or reloading an unchanged
+archive advances its generation. Open windows replace that plugin's contributions,
+dispose its commands/listeners/styles/native surfaces, and retain its extension storage.
+Failed module loads keep the previous renderer definition available and appear in the
+manager. Built-in IDs are reserved and their switches are read-only.
+
+Archives target this SDK with `schema: "opencode.desktop/1"`; rebuild earlier OCDX
+extensions for the new renderer and main entrypoints. `manifest.json` identifies the
+extension, CommonJS entrypoints, and shared imports. The host supplies its own Solid,
+Query, client, schema, and shared UI module instances. Other dependencies are bundled
+by the packer. Pack from this repository:
+
+```sh
+bun packages/plugin/script/desktop-pack.ts --manifest manifest.json --renderer index.tsx --main main.ts --assets assets --out extension.ocdx
+```
+
+The input manifest contains `id`, `name`, and `version`. `--main` and `--assets` are
+optional. `ctx.assets.url("assets/icon.png")` resolves an installed archive asset.
+The runtime is trusted in-process code; installation adds no sandbox or app restart.
+
 ## Local main entrypoint
 
 `MainPlugin.define({ id, rpc, setup })` uses a public `Rpc.define` contract. Inputs, outputs and events are decoded/encoded at the bridge. Effect codecs can carry bytes over the JSON envelope, and Standard Schema/JSON Schema are supported. Methods receive a cancellation signal. Null is the void wire value.
@@ -67,6 +89,6 @@ Main context exposes the owning Electron window, a lifecycle, authenticated Node
 
 ## Verification
 
-The pre-change production benchmark is `desktop-extensions-before`, at base `c3f1bdaf97`. Two samples per scenario completed: cold/closed first-correct median 223.60 ms, cold/open 255.75 ms, warm/closed 57.70 ms, warm/open 95.55 ms, warm/resized 92.85 ms. These are exploratory measurements, not machine-independent thresholds.
+Production parent-branch comparisons are recorded in the draft PR bodies. The measurements use isolated fixtures and do not set machine-independent thresholds.
 
 Focused tests cover lifecycle teardown, codec validation and binary round trips, shared slot ordering, and actual application panel behavior through an independent fixture plugin. The dependent browser extraction exercises native surfaces and server RPC.

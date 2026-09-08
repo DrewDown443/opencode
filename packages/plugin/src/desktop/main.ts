@@ -3,6 +3,7 @@ import type { BrowserWindow, View } from "electron"
 import type { OpenCodeClient } from "@opencode/client/effect"
 import type { Rpc } from "@opencode/schema/rpc"
 import type { Lifecycle } from "./context.js"
+import { Schema } from "effect"
 
 export interface Context {
   readonly window: BrowserWindow
@@ -50,3 +51,20 @@ export interface Entry {
 export function define<const D extends Rpc.Definition>(definition: Definition<D>): Entry {
   return definition as Entry
 }
+
+export const Entry = Schema.declare<Entry>(
+  (value): value is Entry =>
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    typeof value.id === "string" &&
+    "setup" in value &&
+    typeof value.setup === "function" &&
+    "rpc" in value &&
+    typeof value.rpc === "object" &&
+    value.rpc !== null &&
+    "id" in value.rpc &&
+    typeof value.rpc.id === "string" &&
+    "methods" in value.rpc &&
+    "events" in value.rpc,
+)

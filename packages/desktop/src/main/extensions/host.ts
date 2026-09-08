@@ -13,6 +13,7 @@ import { createSurfaces } from "./surfaces"
 export function createMainExtensionHost(
   plugins: readonly MainPlugin.Entry[],
   publish: (win: BrowserWindow, event: DesktopExtension.Event) => void,
+  load?: (id: string) => Promise<MainPlugin.Entry | undefined>,
 ) {
   const windows = new Map<BrowserWindow, ReturnType<typeof windowHost>>()
   const host = (win: BrowserWindow) => {
@@ -43,6 +44,9 @@ export function createMainExtensionHost(
     release(win: BrowserWindow, extensionID: string) {
       host(win).release(extensionID)
     },
+    releaseAll(extensionID: string) {
+      windows.forEach((host) => host.release(extensionID))
+    },
     async dispose() {
       windows.forEach((value) => value.dispose())
       windows.clear()
@@ -63,6 +67,9 @@ export function createMainExtensionHost(
     const calls = new Map<string, AbortController>()
     const surfaces = createSurfaces(win)
     const release = (extensionID: string) => {
+      calls.forEach((call, key) => {
+        if (key.startsWith(`${extensionID}/`)) call.abort()
+      })
       const instance = instances.get(extensionID)
       instances.delete(extensionID)
       try {
@@ -71,11 +78,13 @@ export function createMainExtensionHost(
         surfaces.release(extensionID)
       }
     }
-    const instance = (id: string) => {
+    const instance = async (id: string) => {
       const previous = instances.get(id)
       if (previous) return previous
-      const definition = plugins.find((plugin) => plugin.id === id)
+      const definition = plugins.find((plugin) => plugin.id === id) ?? (await load?.(id))
       if (!definition) throw new CallError("rpc.unavailable", `Desktop extension unavailable: ${id}`)
+      const loaded = instances.get(id)
+      if (loaded) return loaded
       const lifecycle = createLifecycle()
       const context: MainPlugin.Context = {
         window: win,
@@ -132,7 +141,8 @@ export function createMainExtensionHost(
         const controller = new AbortController()
         calls.set(key, controller)
         try {
-          const current = instance(input.extensionID)
+          const current = await instance(input.extensionID)
+          controller.signal.throwIfAborted()
           const method =
             current.definition.rpc.id === input.rpcID ? current.definition.rpc.methods[input.method] : undefined
           const handler = current.handlers[input.method]

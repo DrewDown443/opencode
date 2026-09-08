@@ -1,6 +1,7 @@
 import type { ElectronAPI } from "./api-types"
 import type { UpdaterState } from "@opencode/app/updater"
 import { invoke, listen, send } from "./ipc-client"
+import { ExtensionManager } from "@opencode/plugin/desktop/manager"
 
 type Mutable<Value> =
   Value extends ReadonlyArray<unknown>
@@ -23,6 +24,21 @@ const updaterHandler = (state: UpdaterState) => {
 }
 
 export const api: ElectronAPI = {
+  extensionManager: {
+    list: () => invoke("ExtensionManagerList"),
+    install: (data) => invoke("ExtensionManagerInstall", { data }).then(extensionResult),
+    installURL: (url) => invoke("ExtensionManagerInstallURL", { url }).then(extensionResult),
+    enable: (id, enabled) => invoke("ExtensionManagerEnable", { id, enabled }).then(extensionResult),
+    reload: (id) => invoke("ExtensionManagerReload", { id }).then(extensionResult),
+    source: (id, revision) =>
+      invoke("ExtensionManagerSource", { id, revision }).then((result) => {
+        if (!result.ok) throw new ExtensionManager.ManagerError(result.error.code)
+        return result.value
+      }),
+    onChange: (callback) => listen("ExtensionsChanged", (event) => callback(event.entries)),
+    assetURL: (id, revision, path) =>
+      `oc://extensions/${encodeURIComponent(id)}/${revision}/${path.split("/").map(encodeURIComponent).join("/")}`,
+  },
   extensions: {
     call(input, signal) {
       if (signal?.aborted) return Promise.reject(signal.reason)
@@ -152,4 +168,13 @@ export const api: ElectronAPI = {
   setForceFocus: (enabled) => invoke("AppSetForceFocus", { enabled }),
   recordFatalRendererError: (error) => invoke("AppRecordFatalRendererError", { error }),
   setNativeTranslations: (bundle) => invoke("AppSetNativeTranslations", { value: bundle }),
+}
+
+function extensionResult(
+  result:
+    | { readonly ok: true; readonly entries: readonly ExtensionManager.Installed[] }
+    | { readonly ok: false; readonly error: { readonly code: ExtensionManager.ErrorCode } },
+) {
+  if (!result.ok) throw new ExtensionManager.ManagerError(result.error.code)
+  return result.entries
 }

@@ -52,5 +52,5 @@ export function ExtensionPanelContent(props: { panels: readonly RegisteredPanel[
 }
 
 function groupKey(panel: RegisteredPanel) {
-  return `${panel.session.key}/${panel.plugin}/${panel.props.group ?? panel.key}`
+  return `${panel.session.key}/${panel.plugin}/${panel.generation}/${panel.props.group ?? panel.key}`
 }

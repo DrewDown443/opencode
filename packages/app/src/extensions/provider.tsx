@@ -6,13 +6,16 @@ import {
   getOwner,
   onCleanup,
   runWithOwner,
+  untrack,
+  batch,
   useContext,
   type ParentProps,
   type JSX,
 } from "solid-js"
 import { createStore, produce, type Store, type SetStoreFunction } from "solid-js/store"
 import { Schema } from "effect"
-import type { Context, PanelProps, SessionContext, SlotClaim } from "@opencode/plugin/desktop"
+import type { Context, PanelProps, SessionContext, SlotClaim, Plugin } from "@opencode/plugin/desktop"
+import { ExtensionManager } from "@opencode/plugin/desktop/manager"
 import { createLifecycle } from "@opencode/plugin/desktop/lifecycle"
 import { client } from "@opencode/plugin/desktop/rpc"
 import { resolveSlots, type Claim, type PlacementKind } from "@opencode/plugin/slots"
@@ -28,10 +31,16 @@ import { extensionTabKey } from "./keys"
 import { showToast } from "@/shell/notifications/toast"
 import type { SessionServices } from "@opencode/plugin/desktop/workspace"
 
-export type Contribution = Claim<{ context: Context; when?: () => boolean; render: SlotClaim["render"] }>
+export type Contribution = Claim<{
+  context: Context
+  generation: number
+  when?: () => boolean
+  render: SlotClaim["render"]
+}>
 export type RegisteredPanel = {
   key: string
   plugin: string
+  generation: number
   session: SessionContext
   props: PanelProps
   render: () => JSX.Element
@@ -66,12 +75,80 @@ function createHost() {
     panels: [] as RegisteredPanel[],
     sessions: [] as SessionContext[],
     services: {} as Record<string, SessionServices | undefined>,
+    installed: [] as readonly ExtensionManager.Installed[],
+    // Definitions are opaque: storing a factory prevents Solid from merging a
+    // replacement into the previous definition and hiding its identity change.
+    loaded: {} as Record<string, (() => Plugin.Definition) | undefined>,
+    failures: {} as Record<string, boolean | undefined>,
+    managerReady: false,
+    managerError: undefined as ExtensionManager.ErrorCode | undefined,
   })
   const sessions = new Map<string, SessionContext>()
   const hosts = new Map<string, PanelHost>()
   const instances = new Map<string, { definition: object; dispose: () => void }>()
   const storage = new Map<string, unknown>()
   const memories = new Map<string, unknown>()
+  const attempted = new WeakSet<Plugin.Definition>()
+  let instanceID = 0
+  const builtins = () => platform.extensionPlugins ?? []
+  createEffect(() => {
+    const manager = platform.extensionManager
+    if (!manager) return
+    let changed = false
+    let disposed = false
+    onCleanup(
+      manager.onChange((entries) => {
+        changed = true
+        setState("installed", entries)
+        setState("managerReady", true)
+      }),
+    )
+    onCleanup(() => {
+      disposed = true
+    })
+    void manager
+      .list()
+      .then((entries) => {
+        if (disposed || changed) return
+        setState("installed", entries)
+        setState("managerReady", true)
+      })
+      .catch(() => {
+        if (!disposed && !changed) {
+          setState("managerError", "storage")
+          setState("managerReady", true)
+        }
+      })
+  })
+  const pending = new Map<string, string>()
+  createEffect(() => {
+    const manager = platform.extensionManager
+    if (!manager) return
+    state.installed.forEach((entry) => {
+      if (!entry.enabled) {
+        pending.delete(entry.id)
+        setState("loaded", entry.id, undefined)
+        setState("failures", entry.id, undefined)
+        return
+      }
+      const token = `${entry.revision}/${entry.generation}`
+      if (pending.get(entry.id) === token) return
+      pending.set(entry.id, token)
+      setState("failures", entry.id, undefined)
+      void (async () => {
+        const { loadExtension } = await import("./load")
+        const value = await loadExtension(await manager.source(entry.id, entry.revision))
+        if (pending.get(entry.id) !== token) return
+        setState("loaded", entry.id, () => () => value)
+      })().catch((error) => {
+        if (pending.get(entry.id) === token) {
+          console.debug("[desktop-extensions] load failed", { id: entry.id, error })
+          setState("failures", entry.id, true)
+        }
+      })
+    })
+  })
+  onCleanup(() => pending.clear())
   const resolved = createMemo(() =>
     resolveSlots({
       paths: new Set([
@@ -172,8 +249,17 @@ function createHost() {
     createRoot((dispose) => {
       const lifecycle = createLifecycle()
       const id = definition.id
+      const generation = ++instanceID
+      let activated = false
       let nextClaim = 0
       const context: Context = {
+        assets: {
+          url(path) {
+            const entry = state.installed.find((entry) => entry.id === id)
+            if (!entry || !platform.extensionManager) throw new Error("Extension assets are unavailable")
+            return platform.extensionManager.assetURL(id, entry.revision, path)
+          },
+        },
         app: { version: platform.version, windowID: platform.windowID, native: !!platform.extensions },
         lifecycle,
         platform: {
@@ -204,7 +290,7 @@ function createHost() {
           register(values) {
             return lifecycle.own(
               createRoot((dispose) => {
-                commands.register(`${id}/${nextClaim++}`, () =>
+                commands.register(`${id}/${generation}/${nextClaim++}`, () =>
                   values().map((command) => ({
                     id: command.reference ?? `${id}.${command.id}`,
                     title: command.title,
@@ -243,10 +329,10 @@ function createHost() {
             if (kinds.length !== 1) throw new Error("A slot requires exactly one placement")
             const kind: PlacementKind = kinds[0]
             const value: Contribution = {
-              key: `${id}/${nextClaim++}`,
+              key: `${id}/${generation}/${nextClaim++}`,
               plugin: id,
               placement: { kind, target: claim[kind]! },
-              render: { context, when: claim.when, render: claim.render },
+              render: { context, generation, when: claim.when, render: claim.render },
             }
             setState("claims", (items) => [...items, value])
             return lifecycle.own(() => setState("claims", (items) => items.filter((item) => item.key !== value.key)))
@@ -293,25 +379,49 @@ function createHost() {
         try {
           lifecycle.dispose()
         } finally {
-          platform.extensions?.release(id)
-          setState("panels", (items) => items.filter((panel) => panel.plugin !== id))
+          if (activated) platform.extensions?.release(id)
         }
       })
-      const cleanup = definition.setup(context)
-      if (cleanup) lifecycle.own(cleanup)
-      return dispose
+      try {
+        const cleanup = definition.setup(context)
+        if (cleanup) lifecycle.own(cleanup)
+        activated = true
+        return dispose
+      } catch (error) {
+        dispose()
+        throw error
+      }
     })
 
   createEffect(() => {
-    const definitions = platform.extensionPlugins ?? []
+    const definitions = [
+      ...builtins(),
+      ...Object.values(state.loaded)
+        .flatMap((load) => (load ? [load()] : []))
+        .filter((value) => !builtins().some((builtin) => builtin.id === value.id)),
+    ]
     Array.from(instances).forEach(([id, instance]) => {
-      if (definitions.find((definition) => definition.id === id) === instance.definition) return
+      if (definitions.some((definition) => definition.id === id)) return
       instance.dispose()
       instances.delete(id)
     })
     definitions.forEach((definition) => {
-      if (instances.has(definition.id)) return
-      instances.set(definition.id, { definition, dispose: activate(definition) })
+      if (instances.get(definition.id)?.definition === definition || attempted.has(definition)) return
+      try {
+        batch(() => {
+          const dispose = untrack(() => activate(definition))
+          instances.get(definition.id)?.dispose()
+          instances.set(definition.id, { definition, dispose })
+        })
+      } catch (error) {
+        if (builtins().includes(definition)) throw error
+        console.debug("[desktop-extensions] activation failed", {
+          id: definition.id,
+          error: error instanceof Error ? error.stack : String(error),
+        })
+        setState("failures", definition.id, true)
+        attempted.add(definition)
+      }
     })
   })
   onCleanup(() => instances.forEach((instance) => instance.dispose()))
@@ -320,6 +430,9 @@ function createHost() {
     resolved,
     current,
     transport: platform.extensions,
+    manager: platform.extensionManager,
+    builtins,
+    failed: (id: string) => setState("failures", id, true),
     zoom: () => platform.webviewZoom?.() ?? 1,
     bind(session: SessionContext, host: PanelHost, services?: SessionServices) {
       hosts.set(session.key, host)

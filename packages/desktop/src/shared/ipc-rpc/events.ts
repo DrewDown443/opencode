@@ -5,6 +5,11 @@ import { UpdaterStateSchema } from "./updater"
 import { WslServersEventSchema } from "./wsl"
 import { DesktopExtension } from "@opencode/plugin/desktop/protocol"
 import { ExtensionRpc } from "./extensions"
+import { ExtensionManager } from "@opencode/plugin/desktop/manager"
+
+export class ExtensionsChanged extends Schema.TaggedClass<ExtensionsChanged>()("ExtensionsChanged", {
+  entries: Schema.Array(ExtensionManager.Installed),
+}) {}
 
 export class ExtensionEvent extends Schema.TaggedClass<ExtensionEvent>()("ExtensionEvent", {
   event: DesktopExtension.Event,
@@ -52,6 +57,7 @@ export class StorageChanged extends Schema.TaggedClass<StorageChanged>()("Storag
 }) {}
 
 export const DesktopEvent = Schema.Union([
+  ExtensionsChanged,
   ExtensionEvent,
   BrowserPaneEvent,
   DeepLinksOpened,

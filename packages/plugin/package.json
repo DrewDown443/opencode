@@ -60,6 +60,9 @@
     }
   },
   "devDependencies": {
+    "@zip.js/zip.js": "2.7.62",
+    "vite": "8.2.2",
+    "vite-plugin-solid": "2.11.14",
     "@opencode/theme": "workspace:*",
     "@opentui/core": "catalog:",
     "@opentui/solid": "catalog:",

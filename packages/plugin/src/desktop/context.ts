@@ -83,6 +83,7 @@ export interface Storage {
 }
 
 export interface Context {
+  readonly assets: { url(path: string): string }
   readonly app: { readonly version?: string; readonly windowID?: string; readonly native: boolean }
   readonly lifecycle: Lifecycle
   readonly sessions: { list(): readonly SessionContext[]; current(): SessionContext | undefined }

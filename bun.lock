@@ -599,9 +599,12 @@
         "@types/bun": "catalog:",
         "@types/node": "catalog:",
         "@typescript/native-preview": "catalog:",
+        "@zip.js/zip.js": "2.7.62",
         "electron": "42.10.1",
         "solid-js": "catalog:",
         "typescript": "catalog:",
+        "vite": "8.2.2",
+        "vite-plugin-solid": "2.11.14",
       },
       "peerDependencies": {
         "@opencode/theme": "workspace:*",

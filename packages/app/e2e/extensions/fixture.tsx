@@ -14,7 +14,7 @@ import { base64Encode } from "@opencode/util/encode"
 import { fixture } from "../performance/timeline/session-timeline-stress.fixture"
 
 const plugin = Plugin.define({
-  id: "example.inspector",
+  id: "test.panels",
   setup(ctx) {
     const [state, setState] = createStore({ available: true, closed: 0 })
     const [draft, saveDraft] = ctx.storage.memory("draft", { initial: { text: "" } })

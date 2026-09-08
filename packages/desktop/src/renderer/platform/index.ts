@@ -25,6 +25,7 @@ export function createDesktopPlatform(
     version: windowState.version,
     windowID: windowState.id,
     extensions: api.extensions,
+    extensionManager: api.extensionManager,
     ...createDesktopFiles(api, os, ACCEPTED_FILE_EXTENSIONS),
     ...createDesktopStorage(api),
     browserPane: {

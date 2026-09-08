@@ -9,6 +9,7 @@ import type { DraftStore } from "@/runtime/persistence/drafts"
 import type { BrowserPanePlatform } from "./browser-pane"
 import type { DesktopExtension } from "@opencode/plugin/desktop/protocol"
 import type { Plugin } from "@opencode/plugin/desktop"
+import type { ExtensionManager } from "@opencode/plugin/desktop/manager"
 
 type PickerPaths = string | string[] | null
 type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
@@ -126,6 +127,7 @@ type PlatformBase = {
   browserPane?: BrowserPanePlatform
   extensions?: DesktopExtension.Transport
   extensionPlugins?: readonly Plugin.Definition[]
+  extensionManager?: ExtensionManager.Transport
 }
 
 export type Platform = PlatformBase &

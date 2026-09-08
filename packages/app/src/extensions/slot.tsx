@@ -28,6 +28,7 @@ export function ExtensionSlot<Path extends SlotPath>(props: ParentProps<{ path: 
   const contribution = (claim: Contribution) => (
     <ErrorBoundary
       fallback={(error) => {
+        host.failed(claim.plugin)
         onMount(() =>
           showToast({
             variant: "error",
@@ -63,6 +64,7 @@ export function ExtensionSlot<Path extends SlotPath>(props: ParentProps<{ path: 
                     host.register({
                       key: panel.reference ?? extensionTabKey(claim.plugin, panel.id),
                       plugin: claim.plugin,
+                      generation: claim.render.generation,
                       session,
                       props: panel,
                       render: () => render(() => panel.children),

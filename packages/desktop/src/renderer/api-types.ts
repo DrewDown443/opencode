@@ -5,6 +5,7 @@ import type { UpdaterState } from "@opencode/app/updater"
 import type { WslServersPlatform } from "@opencode/app/wsl/types"
 import type { BrowserPaneRequest } from "../shared/ipc-rpc/browser"
 import type { DesktopExtension } from "@opencode/plugin/desktop/protocol"
+import type { ExtensionManager } from "@opencode/plugin/desktop/manager"
 import type {
   ClipboardImage,
   DirectoryPickerOptions,
@@ -25,6 +26,7 @@ export type UpdaterAPI = {
 
 export type ElectronAPI = {
   extensions: DesktopExtension.Transport
+  extensionManager: ExtensionManager.Transport
   awaitInitialization(): Promise<ServerReadyData>
   reconnectService(): Promise<ServerReadyData>
   browserPane: {

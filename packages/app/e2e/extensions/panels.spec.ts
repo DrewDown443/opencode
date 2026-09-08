@@ -23,7 +23,7 @@ test("independent panel instances retain drafts, close explicitly, and obey plug
   await page.getByRole("tab", { name: "Notes", exact: true }).click()
   await expect(page.getByRole("textbox", { name: "Notes draft", exact: true })).toHaveValue("Retained draft")
   await page
-    .locator('[data-slot="tabs-trigger-wrapper"][data-value="extension:example.inspector:notes"]')
+    .locator('[data-slot="tabs-trigger-wrapper"][data-value="extension:test.panels:notes"]')
     .getByRole("button", { name: "Close tab", exact: true })
     .click()
   await page.getByRole("tab", { name: "Results", exact: true }).click()
