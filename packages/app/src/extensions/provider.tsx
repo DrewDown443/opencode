@@ -33,6 +33,7 @@ import { terminalFontFamily, useSettings } from "@/settings/model"
 import { extensionTabKey } from "./keys"
 import { showToast } from "@/shell/notifications/toast"
 import { ReviewDesktop } from "@opencode/plugin-review-desktop"
+import { ContextDesktop } from "@opencode/plugin-context-desktop"
 import type { SessionServices } from "@opencode/plugin/desktop/workspace"
 
 export type Contribution = Claim<{
@@ -98,7 +99,7 @@ function createHost() {
   const workspaceRemoved = new Set<(value: { serverID: string; directory: string }) => void>()
   const attempted = new WeakSet<Plugin.Definition>()
   let instanceID = 0
-  const builtins = () => [ReviewDesktop, ...(platform.extensionPlugins ?? [])]
+  const builtins = () => [ReviewDesktop, ContextDesktop, ...(platform.extensionPlugins ?? [])]
   createEffect(() => {
     const manager = platform.extensionManager
     if (!manager) return
