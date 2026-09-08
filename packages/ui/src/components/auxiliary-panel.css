@@ -1,0 +1,29 @@
+@layer components {
+  [data-slot="auxiliary-panel"][data-size-animated="true"][data-opened="true"] {
+    animation: auxiliary-panel-size-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  [data-slot="auxiliary-panel"][data-size-animated="true"][data-opened="false"] {
+    animation: auxiliary-panel-size-out 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot="auxiliary-panel"] {
+      animation: none !important;
+    }
+  }
+  @keyframes auxiliary-panel-size-in {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--auxiliary-panel-height);
+    }
+  }
+  @keyframes auxiliary-panel-size-out {
+    from {
+      height: var(--auxiliary-panel-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+}

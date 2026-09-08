@@ -24,6 +24,7 @@ type PersistTarget = {
   scope?: "window"
   workspaceStorageAliases?: string[]
   previousKey?: string
+  previousKeys?: string[]
   key: string
 }
 
@@ -516,7 +517,11 @@ export function persisted<S extends Schema.ConstraintCodec<object, unknown>>(
     if (!isDesktop && !draft) {
       const current = currentStorage as SyncStorage
       const sources = [
+        ...(config.previousKeys ?? []).map((key) => ({ storage: current, key })),
         ...workspaceAliases.map((storage) => ({ storage: localStorageWithPrefix(storage) })),
+        ...workspaceAliases.flatMap((storage) =>
+          (config.previousKeys ?? []).map((key) => ({ storage: localStorageWithPrefix(storage), key })),
+        ),
         ...(config.previousKey ? [{ storage: localStorageDirect(), key: config.previousKey }] : []),
       ]
 
@@ -552,10 +557,17 @@ export function persisted<S extends Schema.ConstraintCodec<object, unknown>>(
       : undefined
     const previousStorage = config.previousKey ? (isDesktop ? platform.storage?.() : localStorageDirect()) : undefined
     const relocationSources = [
+      ...(config.previousKeys ?? []).map((key) => ({ storage: current, key })),
       previousDraftStorage ? { storage: previousDraftStorage } : undefined,
       ...workspaceAliases.map((name) => ({
         storage: isDesktop ? platform.storage?.(name) : localStorageWithPrefix(name),
       })),
+      ...workspaceAliases.flatMap((name) =>
+        (config.previousKeys ?? []).map((key) => ({
+          storage: isDesktop ? platform.storage?.(name) : localStorageWithPrefix(name),
+          key,
+        })),
+      ),
       previousStorage && config.previousKey ? { storage: previousStorage, key: config.previousKey } : undefined,
     ]
       .filter((source): source is { storage: SyncStorage | AsyncStorage; key?: string } => !!source?.storage)

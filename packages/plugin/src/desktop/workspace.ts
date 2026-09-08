@@ -86,6 +86,16 @@ export interface Draft {
 }
 
 export interface SessionView {
+  /** Host-managed secondary dock; its persisted layout may predate extensions. */
+  readonly auxiliary: {
+    opened(): boolean
+    open(): void
+    close(): void
+    toggle(): void
+    height(): number
+    resize(height: number): void
+    placement(): "side" | "bottom"
+  }
   ready(): boolean
   desktop(): boolean
   readonly tabs: {

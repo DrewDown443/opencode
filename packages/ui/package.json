@@ -45,6 +45,7 @@
     "./diff-changes": "./src/data-display/diff-changes/diff-changes.tsx",
     "./divider": "./src/layout/divider/divider.tsx",
     "./layout": "./src/layout/extension-layout.tsx",
+    "./resize-state": "./src/layout/resize-state.ts",
     "./field": "./src/forms/field/field.tsx",
     "./file-tree.css": "./src/styles/file-tree.css",
     "./icon": "./src/icons/icon/icon.tsx",

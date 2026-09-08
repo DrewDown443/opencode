@@ -29,6 +29,15 @@ export function createSessionServices(session: SessionModel): SessionServices {
     annotations,
     draft: { context: draft.context },
     view: {
+      auxiliary: {
+        opened: () => session.layout.view().terminal.opened(),
+        open: () => session.layout.view().terminal.open(),
+        close: () => session.layout.view().terminal.close(),
+        toggle: () => session.layout.view().terminal.toggle(),
+        height: () => session.layout.view().terminal.height(),
+        resize: (height) => session.layout.view().terminal.resize(height),
+        placement: settings.general.terminalPlacement,
+      },
       ready: layout.ready,
       desktop: session.isDesktop,
       tabs: {

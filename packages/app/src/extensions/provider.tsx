@@ -12,9 +12,10 @@ import {
   type ParentProps,
   type JSX,
 } from "solid-js"
-import { createStore, produce, type Store, type SetStoreFunction } from "solid-js/store"
+import { createStore, produce, reconcile, type Store, type SetStoreFunction } from "solid-js/store"
 import { Schema } from "effect"
 import type { Context, PanelProps, SessionContext, SlotClaim, Plugin } from "@opencode/plugin/desktop"
+import type { Server, StorageOptions } from "@opencode/plugin/desktop/context"
 import { ExtensionManager } from "@opencode/plugin/desktop/manager"
 import { createLifecycle } from "@opencode/plugin/desktop/lifecycle"
 import { client } from "@opencode/plugin/desktop/rpc"
@@ -26,7 +27,9 @@ import { useTabs, tabKey } from "@/shell/tabs/tabs"
 import { useCurrentRoute } from "@/shell/state/layout"
 import { useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
-import { persisted, Persist } from "@/runtime/persistence/storage"
+import { persisted, Persist, removePersisted } from "@/runtime/persistence/storage"
+import { base64Encode } from "@opencode/util/encode"
+import { terminalFontFamily, useSettings } from "@/settings/model"
 import { extensionTabKey } from "./keys"
 import { showToast } from "@/shell/notifications/toast"
 import type { SessionServices } from "@opencode/plugin/desktop/workspace"
@@ -69,11 +72,13 @@ function createHost() {
   const route = useCurrentRoute()
   const commands = useCommand()
   const language = useLanguage()
+  const settings = useSettings()
   const owner = getOwner()
   const [state, setState] = createStore({
     claims: [] as Contribution[],
     panels: [] as RegisteredPanel[],
     sessions: [] as SessionContext[],
+    servers: [] as Server[],
     services: {} as Record<string, SessionServices | undefined>,
     installed: [] as readonly ExtensionManager.Installed[],
     // Definitions are opaque: storing a factory prevents Solid from merging a
@@ -88,6 +93,8 @@ function createHost() {
   const instances = new Map<string, { definition: object; dispose: () => void }>()
   const storage = new Map<string, unknown>()
   const memories = new Map<string, unknown>()
+  const persistent = new Map<string, { value: unknown; reset(): void }>()
+  const workspaceRemoved = new Set<(value: { serverID: string; directory: string }) => void>()
   const attempted = new WeakSet<Plugin.Definition>()
   let instanceID = 0
   const builtins = () => platform.extensionPlugins ?? []
@@ -162,6 +169,8 @@ function createHost() {
         "session.panel.toolbar",
         "session.panel.tools",
         "session.sidebar",
+        "session.auxiliary",
+        "session.mobile.actions",
       ]),
       claims: state.claims.filter((claim) => claim.render.when?.() ?? true),
     }),
@@ -169,6 +178,25 @@ function createHost() {
 
   createEffect(() => {
     const all = global.servers.list()
+    const available = all.map((connection): Server => {
+      const id = ServerConnection.key(connection)
+      const data = global.ensureServerCtx(connection)
+      return {
+        id,
+        local: ServerConnection.local(connection),
+        get url() {
+          return data.sdk.url
+        },
+        get client() {
+          return data.sdk.api
+        },
+        data: data.data,
+        get compatible() {
+          return !global.servers.health[id]?.incompatible
+        },
+      }
+    })
+    setState("servers", available)
     platform.extensions?.configure(
       all.map((connection) => ({
         id: ServerConnection.key(connection),
@@ -185,17 +213,7 @@ function createHost() {
       const connection = all.find((connection) => ServerConnection.key(connection) === tab.server)
       if (!connection) return
       const data = global.ensureServerCtx(connection)
-      const server = {
-        id: tab.server,
-        local: ServerConnection.local(connection),
-        get client() {
-          return data.sdk.api
-        },
-        data: data.data,
-        get compatible() {
-          return !global.servers.health[tab.server]?.incompatible
-        },
-      }
+      const server = available.find((server) => server.id === tab.server)!
       Array.from(new Set([tab.sessionId, tab.routeSessionId ?? tab.sessionId])).forEach((id) => {
         const key = `${tab.server}\n${id}`
         if (sessions.has(key)) return
@@ -245,6 +263,41 @@ function createHost() {
     return value
   }
 
+  const persistTarget = (id: string, key: string, options?: StorageOptions) => {
+    if (!options?.scope)
+      return {
+        ...Persist.global(`extension.${id}.${key}`),
+        previousKeys: options?.legacyKey ? [options.legacyKey] : undefined,
+      }
+    const connection = global.servers.list().find((server) => ServerConnection.key(server) === options.scope!.serverID)
+    if (!connection) throw new Error("Extension storage server is unavailable")
+    return {
+      ...Persist.serverWorkspace(
+        global.ensureServerCtx(connection).sdk.scope,
+        base64Encode(options.scope.directory),
+        `extension.${id}.${key}`,
+      ),
+      previousKeys: options.legacyKey ? [`workspace:${options.legacyKey}`] : undefined,
+    }
+  }
+  const persistFor = <S extends Schema.ConstraintCodec<object, unknown>>(
+    id: string,
+    key: string,
+    schema: S,
+    initial: NoInfer<S["Type"]>,
+    options?: StorageOptions,
+  ) => {
+    const target = persistTarget(id, key, options)
+    const name = JSON.stringify([target.storage, target.key])
+    const previous = persistent.get(name)
+    type Value = readonly [Store<S["Type"]>, SetStoreFunction<S["Type"]>, () => boolean]
+    if (previous) return previous.value as Value
+    const pair = runWithOwner(owner, () => persisted(target, schema, initial))!
+    const value = [pair[0], pair[1], pair[3]] as const
+    persistent.set(name, { value, reset: () => pair[1](reconcile(initial)) })
+    return value
+  }
+
   const activate = (definition: NonNullable<typeof platform.extensionPlugins>[number]) =>
     createRoot((dispose) => {
       const lifecycle = createLifecycle()
@@ -276,7 +329,23 @@ function createHost() {
           },
         },
         sessions: { list: () => state.sessions, current },
+        servers: { list: () => state.servers },
+        workspaces: {
+          onRemoved(handler) {
+            workspaceRemoved.add(handler)
+            return lifecycle.own(() => workspaceRemoved.delete(handler))
+          },
+        },
+        fonts: { console: () => terminalFontFamily(settings.appearance.terminalFont()) },
         storage: {
+          persist: (key, schema, initial, options) => persistFor(id, key, schema, initial, options),
+          remove(key, options) {
+            const target = persistTarget(id, key, options)
+            const name = JSON.stringify([target.storage, target.key])
+            persistent.get(name)?.reset()
+            removePersisted(target, platform)
+            target.previousKeys?.forEach((key) => removePersisted({ ...target, key }, platform))
+          },
           store: (key, options) => stateFor(id, key, options.initial, true),
           memory: (key, options) => stateFor(id, key, options.initial, false),
         },
@@ -300,6 +369,7 @@ function createHost() {
                     hidden: command.palette === false,
                     keybind: command.bind,
                     slash: command.slash,
+                    when: command.when,
                     onSelect: () => {
                       void command.run()
                     },
@@ -310,6 +380,8 @@ function createHost() {
             )
           },
           dispatch: (commandID) => commands.trigger(`${id}.${commandID}`),
+          keys: commands.keybindParts,
+          matches: commands.matches,
         },
         main: {
           rpc(definition) {
@@ -433,6 +505,9 @@ function createHost() {
     manager: platform.extensionManager,
     builtins: (): readonly Plugin.Definition[] => builtins(),
     failed: (id: string) => setState("failures", id, true),
+    workspaceRemoved(value: { serverID: string; directory: string }) {
+      workspaceRemoved.forEach((handler) => handler(value))
+    },
     zoom: () => platform.webviewZoom?.() ?? 1,
     bind(session: SessionContext, host: PanelHost, services?: SessionServices) {
       hosts.set(session.key, host)

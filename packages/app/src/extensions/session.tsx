@@ -2,6 +2,7 @@ import { createEffect, createMemo, on, onCleanup, Show } from "solid-js"
 import { useOptionalDesktopExtensions } from "./provider"
 import { ExtensionSlot } from "./slot"
 import type { SessionServices } from "@opencode/plugin/desktop/workspace"
+import type { AuxiliaryPresentation } from "@opencode/plugin/desktop/context"
 
 export function useExtensionPanels(input: {
   serverID: () => string
@@ -89,6 +90,45 @@ export function useExtensionPanels(input: {
     ),
   )
   return {
+    hasAuxiliary: () => {
+      const value = host?.resolved().slotted.get("session.auxiliary")
+      return (
+        !!value &&
+        (!!value.replace || value.before.length + value.prepend.length + value.append.length + value.after.length > 0)
+      )
+    },
+    auxiliary: (presentation: AuxiliaryPresentation) => (
+      // A secondary surface can span multiple sessions in the same workspace.
+      // Keep its owner and pass reactive identity instead of keying on the route.
+      <Show when={input.services && session()}>
+        {(current) => (
+          <ExtensionSlot
+            path="session.auxiliary"
+            input={{
+              get session() {
+                return current()
+              },
+              services: input.services!,
+              presentation,
+            }}
+          />
+        )}
+      </Show>
+    ),
+    mobileActions: () => (
+      <Show when={session()}>
+        {(current) => (
+          <ExtensionSlot
+            path="session.mobile.actions"
+            input={{
+              get session() {
+                return current()
+              },
+            }}
+          />
+        )}
+      </Show>
+    ),
     panels,
     keys: () => panels().map((panel) => panel.key),
     canClose: (key: string) => panels().find((panel) => panel.key === key)?.props.closable !== false,

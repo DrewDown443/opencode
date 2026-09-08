@@ -23,6 +23,18 @@ Session controls can use `session.header.actions`, `session.panel.toolbar`,
 uses the shared placement rules. Renderer contexts also expose shared translations,
 notifications, file export, and available native path actions.
 
+`session.auxiliary` renders the host's secondary dock with reactive session identity,
+shared session services, and presentation props. Its owner can remain mounted while
+switching sessions in one workspace. `session.mobile.actions` supplies corresponding
+mobile navigation. The host owns docking and resize state through `view.auxiliary`.
+
+Schema-aware `storage.persist(key, schema, initial, options)` returns a Solid store,
+setter, and hydration accessor. `options.scope` selects a server/workspace and
+`legacyKey` imports that feature's previous host key. `storage.remove` clears that
+scope. `workspaces.onRemoved` lets extensions release workspace-local state.
+`servers.list`, server URLs, command keybind matching, and the shared console font
+let extensions use the existing client and UI behavior without importing App internals.
+
 ```tsx
 import { Plugin } from "@opencode/plugin/desktop"
 import { Panel, NativeSurface } from "@opencode/plugin/desktop/solid"

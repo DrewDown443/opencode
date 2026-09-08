@@ -10,8 +10,10 @@ const imports = new Set([
   "@opencode/plugin/desktop",
   "@opencode/plugin/desktop/solid",
   "@opencode/plugin/desktop/manager",
+  "@opencode/plugin/desktop/persistence",
   "@opencode/schema/rpc",
   "@opencode/client",
+  "@opencode/client/solid",
   "@opencode/util/encode",
   "@opencode/util/path",
 ])

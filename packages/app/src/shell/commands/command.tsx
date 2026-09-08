@@ -458,6 +458,10 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
         const config = keybindConfig(id)
         return config ? formatKeybindParts(config, language.t) : []
       },
+      matches(id: string, event: KeyboardEvent) {
+        const config = keybindConfig(id)
+        return !!config && matchKeybind(parseKeybind(config), event)
+      },
       show: showPalette,
       keybinds(enabled: boolean) {
         setStore("suspendCount", (count) => Math.max(0, count + (enabled ? -1 : 1)))

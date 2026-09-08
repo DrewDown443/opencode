@@ -70,14 +70,6 @@
     animation: side-terminal-panel-presence-out 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
 
-  [data-component="terminal-panel"][data-size-animated="true"][data-opened="true"] {
-    animation: terminal-panel-size-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  [data-component="terminal-panel"][data-size-animated="true"][data-opened="false"] {
-    animation: terminal-panel-size-out 200ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
   @media (prefers-reduced-motion: reduce) {
     [data-slot="terminal-panel-presence"],
     [data-slot="side-terminal-panel-presence"],
@@ -144,24 +136,6 @@
     to {
       opacity: 0.999999;
       visibility: hidden;
-    }
-  }
-
-  @keyframes terminal-panel-size-in {
-    from {
-      height: 0;
-    }
-    to {
-      height: var(--terminal-panel-height);
-    }
-  }
-
-  @keyframes terminal-panel-size-out {
-    from {
-      height: var(--terminal-panel-height);
-    }
-    to {
-      height: 0;
     }
   }
 
