@@ -139,7 +139,7 @@ test("uses side placement by default and supports the terminal across the bottom
   await expectSessionReady(page, { server, sessionID, title })
   await expect(page.locator("#review-panel")).toBeVisible()
   await expectTree(page, 2_773, "action.yml")
-  await expect(page.locator("#session-side-panel-review-tab")).toHaveText("Files Changed 2740")
+  await expect(page.locator("#review-panel").getByRole("tab", { name: "Files Changed 2740", exact: true })).toBeVisible()
   await page.keyboard.press("Control+Backquote")
   await expect(page.locator("#terminal-panel")).toBeVisible()
   await expectTree(page, 2_773, "action.yml")
