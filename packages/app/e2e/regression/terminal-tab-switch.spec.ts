@@ -100,11 +100,12 @@ for (const direction of ["ltr", "rtl"] as const) {
     await expect.poll(() => connections.length).toBe(2)
     await terminal.click()
     await expect(terminal.locator("textarea")).toBeFocused()
-    const removed = page.waitForRequest(
-      (request) => request.method() === "DELETE" && new URL(request.url()).pathname === `/api/pty/${ptyID}`,
+    const removed = page.waitForResponse(
+      (response) =>
+        response.request().method() === "DELETE" && new URL(response.url()).pathname === `/api/pty/${ptyID}`,
     )
     await page.keyboard.press("Control+w")
-    await removed
+    expect((await removed).status()).toBe(204)
     await expect(terminal).toHaveCount(0)
     await expect(navigation.getByRole("tab", { name: "Session", exact: true })).toHaveAttribute("aria-selected", "true")
   })
@@ -157,11 +158,13 @@ async function setup(page: Page) {
     }),
   )
   await page.route(`**/api/pty/${ptyID}*`, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ location: ptyLocation(), data: ptyInfo() }),
-    }),
+    route.request().method() === "DELETE"
+      ? route.fulfill({ status: 204 })
+      : route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ location: ptyLocation(), data: ptyInfo() }),
+        }),
   )
   await page.route(`**/api/pty/${ptyID}/connect-token*`, (route) => {
     expect(route.request().headers()["x-opencode-ticket"]).toBe("1")
