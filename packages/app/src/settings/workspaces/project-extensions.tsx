@@ -9,6 +9,7 @@ import { useServerSDK } from "@/runtime/server/client"
 import { useData } from "@/runtime/server/current"
 import { pluginLabels } from "@/providers/catalog/plugin"
 import { ExternalLink } from "@/runtime/platform/external-link"
+import "./project.css"
 
 type SkillItem = {
   name: string
@@ -18,7 +19,7 @@ type SkillItem = {
 const skillKey = (item: SkillItem) => `${item.name}\n${item.location}`
 
 const ExtensionCard: Component<{ children: JSX.Element }> = (props) => (
-  <div class="project-settings-extension-card">{props.children}</div>
+  <div class="project-settings-extension-card settings-extension-list">{props.children}</div>
 )
 
 const ExtensionRow: Component<{
@@ -29,11 +30,36 @@ const ExtensionRow: Component<{
   <div class="project-settings-extension-row">
     <div class="project-settings-extension-row-main">
       <Icon name={props.icon} class="project-settings-extension-row-icon" />
-      <span class="project-settings-extension-row-name">{props.name}</span>
+      <span class="project-settings-extension-row-name settings-extension-name">{props.name}</span>
     </div>
     {props.children}
   </div>
 )
+
+const ProjectSectionHeader: Component<{
+  kind: "mcps" | "plugins" | "skills"
+  empty: boolean
+  action: JSX.Element
+}> = (props) => {
+  const language = useLanguage()
+  return (
+    <div class="project-settings-extension-section-header">
+      <div class="project-settings-extension-section-copy">
+        <span>
+          {props.empty
+            ? language.t(`project.settings.extensions.empty.${props.kind}.title`)
+            : language.t("project.settings.extensions.added")}
+        </span>
+        <Show when={props.empty}>
+          <span class="project-settings-extension-empty-description">
+            {language.t(`project.settings.extensions.empty.${props.kind}.description`)}
+          </span>
+        </Show>
+      </div>
+      {props.action}
+    </div>
+  )
+}
 
 const SharedSection: Component<{
   count: number
@@ -46,13 +72,21 @@ const SharedSection: Component<{
       <div class="project-settings-shared">
         <button
           type="button"
-          class="project-settings-shared-trigger"
+          class="settings-models-group-trigger project-settings-shared-trigger"
           aria-expanded={open()}
           onClick={() => setOpen((value) => !value)}
         >
-          <Icon name="chevron-right" classList={{ "project-settings-shared-chevron": true, open: open() }} />
-          <span>{language.t("project.settings.extensions.shared")}</span>
-          <span class="project-settings-shared-count">{props.count}</span>
+          <span class="settings-models-group-chevron">
+            <Icon
+              name="fill-triangle-down"
+              size="small"
+              classList={{ "project-settings-shared-chevron": true, open: open() }}
+            />
+          </span>
+          <span class="project-settings-shared-label">
+            <span class="settings-models-group-title">{language.t("project.settings.extensions.shared")}</span>
+            <span class="project-settings-shared-count">{props.count}</span>
+          </span>
         </button>
         <Show when={open()}>
           <ExtensionCard>{props.children}</ExtensionCard>
@@ -145,61 +179,74 @@ export const ProjectSettingsExtensions: Component = () => {
   )
 
   return (
-    <div class="project-settings-extensions">
-      <div class="project-settings-page-header">
-        <h2>{language.t("settings.tab.extensions")}</h2>
-        <span>{language.t("project.settings.extensions.description")}</span>
+    <>
+      <div class="settings-tab-header">
+        <div class="settings-tab-header-row">
+          <div class="flex flex-col gap-1">
+            <h2 class="settings-tab-title">{language.t("settings.tab.extensions")}</h2>
+            <span class="text-11-regular text-v2-text-text-muted">
+              {language.t("project.settings.extensions.description")}
+            </span>
+          </div>
+        </div>
       </div>
 
-      <Tabs variant="pill" defaultValue="mcps" class="project-settings-extension-tabs">
-        <Tabs.List>
-          <Tabs.Trigger value="mcps">{language.t("settings.extensions.tab.mcps")}</Tabs.Trigger>
-          <Tabs.Trigger value="plugins">{language.t("status.popover.tab.plugins")}</Tabs.Trigger>
-          <Tabs.Trigger value="skills">{language.t("settings.extensions.tab.skills")}</Tabs.Trigger>
-          {/* TODO: Restore LSP status when V2 exposes it. */}
-        </Tabs.List>
+      <div class="settings-tab-body">
+        <Tabs variant="pill" defaultValue="mcps" class="project-settings-extension-tabs settings-subtabs">
+          <Tabs.List>
+            <Tabs.Trigger value="mcps">{language.t("settings.extensions.tab.mcps")}</Tabs.Trigger>
+            <Tabs.Trigger value="plugins">{language.t("status.popover.tab.plugins")}</Tabs.Trigger>
+            <Tabs.Trigger value="skills">{language.t("settings.extensions.tab.skills")}</Tabs.Trigger>
+            {/* TODO: Restore LSP status when V2 exposes it. */}
+          </Tabs.List>
 
-        <Tabs.Content value="mcps">
-          <div class="project-settings-extension-section">
-            <div class="project-settings-extension-section-header">
-              <span>{language.t("project.settings.extensions.added")}</span>
-              <span>{language.t("settings.extensions.manageConfig")}</span>
+          <Tabs.Content value="mcps">
+            <div class="project-settings-extension-section">
+              <ProjectSectionHeader
+                kind="mcps"
+                empty={projectMcpNames().length === 0}
+                action={<span>{language.t("settings.extensions.manageConfig")}</span>}
+              />
+              <Show when={projectMcpNames().length > 0}>
+                <ExtensionCard>{mcpRows(projectMcpNames())}</ExtensionCard>
+              </Show>
+              <SharedSection count={globalMcpNames().length}>{mcpRows(globalMcpNames())}</SharedSection>
             </div>
-            <Show when={projectMcpNames().length > 0}>
-              <ExtensionCard>{mcpRows(projectMcpNames())}</ExtensionCard>
-            </Show>
-            <SharedSection count={globalMcpNames().length}>{mcpRows(globalMcpNames())}</SharedSection>
-          </div>
-        </Tabs.Content>
+          </Tabs.Content>
 
-        <Tabs.Content value="plugins">
-          <div class="project-settings-extension-section">
-            <div class="project-settings-extension-section-header">
-              <span>{language.t("project.settings.extensions.added")}</span>
-              <span>{language.t("settings.extensions.manageConfig")}</span>
+          <Tabs.Content value="plugins">
+            <div class="project-settings-extension-section">
+              <ProjectSectionHeader
+                kind="plugins"
+                empty={projectPlugins().length === 0}
+                action={<span>{language.t("settings.extensions.manageConfig")}</span>}
+              />
+              <Show when={projectPlugins().length > 0}>
+                <ExtensionCard>{pluginRows(projectPlugins())}</ExtensionCard>
+              </Show>
+              <SharedSection count={globalPlugins().length}>{pluginRows(globalPlugins())}</SharedSection>
             </div>
-            <Show when={projectPlugins().length > 0}>
-              <ExtensionCard>{pluginRows(projectPlugins())}</ExtensionCard>
-            </Show>
-            <SharedSection count={globalPlugins().length}>{pluginRows(globalPlugins())}</SharedSection>
-          </div>
-        </Tabs.Content>
+          </Tabs.Content>
 
-        <Tabs.Content value="skills">
-          <div class="project-settings-extension-section">
-            <div class="project-settings-extension-section-header">
-              <span>{language.t("project.settings.extensions.added")}</span>
-              <ExternalLink class="project-settings-extension-link" href="https://opencode.ai/docs/skills/">
-                {language.t("settings.extensions.addSkills")}
-              </ExternalLink>
+          <Tabs.Content value="skills">
+            <div class="project-settings-extension-section">
+              <ProjectSectionHeader
+                kind="skills"
+                empty={projectSkills().length === 0}
+                action={
+                  <ExternalLink class="settings-extension-link" href="https://opencode.ai/docs/skills/">
+                    {language.t("settings.extensions.addSkills")}
+                  </ExternalLink>
+                }
+              />
+              <Show when={projectSkills().length > 0}>
+                <ExtensionCard>{skillRows(projectSkills())}</ExtensionCard>
+              </Show>
+              <SharedSection count={serverSkills().length}>{skillRows(serverSkills())}</SharedSection>
             </div>
-            <Show when={projectSkills().length > 0}>
-              <ExtensionCard>{skillRows(projectSkills())}</ExtensionCard>
-            </Show>
-            <SharedSection count={serverSkills().length}>{skillRows(serverSkills())}</SharedSection>
-          </div>
-        </Tabs.Content>
-      </Tabs>
-    </div>
+          </Tabs.Content>
+        </Tabs>
+      </div>
+    </>
   )
 }

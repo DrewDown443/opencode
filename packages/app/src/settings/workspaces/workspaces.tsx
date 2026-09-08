@@ -21,7 +21,6 @@ import { getRelativeTime } from "@/shell/time"
 import { sessionLabel } from "@/session/title"
 import { pathKey } from "@/workspaces/path-key"
 import { SettingsList } from "@/settings/list"
-import { InlineServerSelect } from "@/settings/server-select"
 import { useTabs } from "@/shell/tabs/tabs"
 import { usePlatform } from "@/runtime/platform/platform"
 import { clearWorkspaceTerminals } from "@/session/terminal/context"
@@ -48,9 +47,11 @@ type Workspace = {
   project: Project
 }
 
-export const SettingsWorkspaces: Component<{ activeDirectory?: string; resetProjectFilter: () => number }> = (
-  props,
-) => {
+export const SettingsWorkspaces: Component<{
+  activeDirectory?: string
+  resetProjectFilter?: () => number
+  projectID?: string
+}> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
   const serverSDK = useServerSDK()
@@ -64,7 +65,11 @@ export const SettingsWorkspaces: Component<{ activeDirectory?: string; resetProj
     removing: [] as string[],
   })
   createEffect(() => {
-    props.resetProjectFilter()
+    if (props.projectID) {
+      setStore("project", props.projectID)
+      return
+    }
+    props.resetProjectFilter?.()
     setStore("project", "all")
   })
 
@@ -91,7 +96,11 @@ export const SettingsWorkspaces: Component<{ activeDirectory?: string; resetProj
     ...projects().map((project) => ({ id: project.id, label: projectName(project) })),
   ])
   const selectedProject = createMemo(() =>
-    store.project === "all" || projects().some((project) => project.id === store.project) ? store.project : "all",
+    props.projectID
+      ? props.projectID
+      : store.project === "all" || projects().some((project) => project.id === store.project)
+        ? store.project
+        : "all",
   )
   const filtered = createMemo(() => filterWorkspaceInventory(workspaces(), selectedProject()))
   const captureDeleteContext = () => {
@@ -328,7 +337,6 @@ export const SettingsWorkspaces: Component<{ activeDirectory?: string; resetProj
             <h2 class="settings-tab-title">{language.t("settings.tab.workspaces")}</h2>
             <span class="text-11-regular text-v2-text-text-muted">{language.t("settings.workspaces.description")}</span>
           </div>
-          <InlineServerSelect />
         </div>
       </div>
 
@@ -339,7 +347,7 @@ export const SettingsWorkspaces: Component<{ activeDirectory?: string; resetProj
               {language.plural("settings.workspaces.count", filtered().length)}
             </span>
             <div class="settings-workspaces-toolbar-actions">
-              <Show when={projects().length > 1}>
+              <Show when={!props.projectID && projects().length > 1}>
                 <Menu placement="bottom-end" gutter={6}>
                   <Menu.Trigger as={Button} size="small" variant="ghost-muted" class="max-w-48">
                     <span class="min-w-0 truncate">

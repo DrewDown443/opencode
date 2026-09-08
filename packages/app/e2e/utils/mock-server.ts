@@ -9,6 +9,10 @@ export interface MockServerConfig {
   provider: unknown | (() => unknown)
   integrationMethods?: Record<string, unknown[]>
   onConnectKey?: (input: { integrationID: string; body: unknown }) => void
+  onProjectUpdate?: (input: { projectID: string; body: unknown }) => void
+  preferences?: Record<string, unknown>
+  shells?: unknown[]
+  websearchProviders?: unknown[]
   directory: string
   project: unknown
   sessions: ({ id: string } & Record<string, unknown>)[]
@@ -179,13 +183,14 @@ export function createMockServerHandler(config: MockServerConfig) {
 const corsHeaders = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "*",
-  "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
   "access-control-expose-headers": "x-next-cursor",
 }
 
 function mockHandlers(config: MockServerConfig, state: { cursors: Map<string, string>; nextCursor: number }) {
   const noContent = Effect.succeed(HttpApiSchema.NoContent.make())
   const delay = config.messageDelay === undefined ? Effect.void : Effect.sleep(Duration.millis(config.messageDelay))
+  const preferences = { current: config.preferences ?? {} }
   return HttpApiBuilder.group(MockApi, "mock", (handlers) =>
     handlers
       .handleRaw("event", () => {
@@ -263,12 +268,29 @@ function mockHandlers(config: MockServerConfig, state: { cursors: Map<string, st
           const project = config.project as typeof config.project & { canonical?: string; worktree?: string }
           return Effect.succeed([{ ...project, canonical: project.canonical ?? project.worktree ?? config.directory }])
         },
+        projectUpdate: (ctx) =>
+          Effect.sync(() => config.onProjectUpdate?.({ projectID: ctx.params.projectID, body: ctx.payload })).pipe(
+            Effect.as({
+              ...(config.project as Record<string, unknown>),
+              ...ctx.payload,
+              id: ctx.params.projectID,
+              canonical: (config.project as { canonical?: string; worktree?: string }).canonical ?? config.directory,
+            }),
+          ),
         projectCurrent: () =>
           Effect.succeed({
             id: (config.project as { id?: string }).id,
             directory: config.directory,
             canonical: config.directory,
           }),
+        configPreferences: () => Effect.succeed(preferences.current),
+        configUpdatePreferences: (ctx) =>
+          Effect.sync(() => {
+            preferences.current = { ...preferences.current, ...ctx.payload }
+            return preferences.current
+          }),
+        configShells: () => Effect.succeed(config.shells ?? []),
+        websearchProviders: () => Effect.succeed({ location: location(config), data: config.websearchProviders ?? [] }),
         worktreeList: () =>
           Effect.succeed([
             { directory: config.directory },
