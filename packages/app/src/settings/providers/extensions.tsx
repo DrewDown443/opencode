@@ -8,6 +8,7 @@ import { useServerSDK } from "@/runtime/server/client"
 import { useMcpToggle } from "@/providers/connect/mcp"
 import { pluginLabels } from "@/providers/catalog/plugin"
 import { ExternalLink } from "@/runtime/platform/external-link"
+import { SettingsList } from "@/settings/list"
 import "@/settings/settings.css"
 
 interface McpRowItem {
@@ -83,11 +84,11 @@ export const SettingsExtensions: Component = () => {
                   {language.t("settings.extensions.manageConfig")}
                 </span>
               </div>
-              <div class="settings-extension-list border-[0.5px] border-[var(--v2-border-border-base)] rounded-[8px] pl-4 pr-3 overflow-hidden">
+              <SettingsList variant="catalog">
                 <For each={mcps()}>
                   {(item) => (
-                    <div class="py-4 flex items-center justify-between border-b-[0.5px] border-[var(--v2-border-border-base)] last:border-b-0">
-                      <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="settings-extension-row">
+                      <div class="settings-extension-lead">
                         <Icon name="mcp" class="text-v2-icon-icon-muted shrink-0" />
                         <span class="settings-extension-name text-13-medium truncate">{item.name}</span>
                       </div>
@@ -97,7 +98,7 @@ export const SettingsExtensions: Component = () => {
                     </div>
                   )}
                 </For>
-              </div>
+              </SettingsList>
             </div>
           </Tabs.Content>
 
@@ -111,18 +112,18 @@ export const SettingsExtensions: Component = () => {
                   {language.t("settings.extensions.manageConfig")}
                 </span>
               </div>
-              <div class="settings-extension-list border-[0.5px] border-[var(--v2-border-border-base)] rounded-[8px] pl-4 pr-3 overflow-hidden">
+              <SettingsList variant="catalog">
                 <For each={plugins()}>
                   {(plugin) => (
-                    <div class="py-4 flex items-center justify-between border-b-[0.5px] border-[var(--v2-border-border-base)] last:border-b-0">
-                      <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="settings-extension-row">
+                      <div class="settings-extension-lead">
                         <Icon name="cube" class="text-v2-icon-icon-muted shrink-0" />
                         <span class="settings-extension-name text-13-medium truncate">{plugin.name}</span>
                       </div>
                     </div>
                   )}
                 </For>
-              </div>
+              </SettingsList>
             </div>
           </Tabs.Content>
 
@@ -132,25 +133,22 @@ export const SettingsExtensions: Component = () => {
                 <span class="settings-extension-heading text-13-medium">
                   {language.t("settings.extensions.availableAll")}
                 </span>
-                <ExternalLink
-                  class="settings-extension-link text-13-regular"
-                  href="https://opencode.ai/docs/skills/"
-                >
+                <ExternalLink class="settings-extension-link text-13-regular" href="https://opencode.ai/docs/skills/">
                   {language.t("settings.extensions.addSkills")}
                 </ExternalLink>
               </div>
-              <div class="settings-extension-list border-[0.5px] border-[var(--v2-border-border-base)] rounded-[8px] pl-4 pr-3 overflow-hidden">
+              <SettingsList variant="catalog">
                 <For each={skills()}>
                   {(skill) => (
-                    <div class="py-4 flex items-center justify-between border-b-[0.5px] border-[var(--v2-border-border-base)] last:border-b-0">
-                      <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="settings-extension-row">
+                      <div class="settings-extension-lead">
                         <Icon name="post-skill" class="text-v2-icon-icon-muted shrink-0" />
                         <span class="settings-extension-name text-13-medium truncate">{skill.name}</span>
                       </div>
                     </div>
                   )}
                 </For>
-              </div>
+              </SettingsList>
             </div>
           </Tabs.Content>
         </Tabs>

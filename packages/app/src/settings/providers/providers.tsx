@@ -134,7 +134,7 @@ export const SettingsProviders: Component<{
       <div class="settings-tab-body settings-tab-body--sectioned settings-providers">
         <div class="settings-section" data-component="connected-providers-section">
           <h3 class="settings-section-title">{language.t("settings.providers.section.connected")}</h3>
-          <SettingsList>
+          <SettingsList variant="catalog">
             <Show
               when={connected().length > 0}
               fallback={<div class="settings-provider-empty">{language.t("settings.providers.connected.empty")}</div>}
@@ -175,7 +175,7 @@ export const SettingsProviders: Component<{
 
         <div class="settings-section">
           <h3 class="settings-section-title">{language.t("settings.providers.section.popular")}</h3>
-          <SettingsList>
+          <SettingsList variant="catalog">
             <For each={popular()}>
               {(item) => (
                 <div class="settings-provider-row">

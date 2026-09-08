@@ -162,7 +162,7 @@ export const DialogManageModels: Component = () => {
                           </Switch>
                         </div>
                         <Show when={expanded()}>
-                          <SettingsList>
+                          <SettingsList variant="catalog">
                             <For each={group.items}>
                               {(item) => (
                                 <SettingsRow title={item.name} description="">

@@ -67,34 +67,6 @@
   line-height: var(--line-height-base);
 }
 
-.project-settings-extension-card {
-  padding-inline: 12px;
-  overflow: hidden;
-  border: 0.5px solid var(--v2-border-border-base);
-  border-radius: 8px;
-}
-
-.project-settings-extension-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 48px;
-  border-bottom: 0.5px solid var(--v2-border-border-base);
-}
-
-.project-settings-extension-row:last-child {
-  border-bottom: 0;
-}
-
-.project-settings-extension-row-main {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
 .project-settings-extension-row-icon {
   flex-shrink: 0;
   color: var(--v2-icon-icon-muted);
@@ -114,7 +86,6 @@
   min-width: 0;
   flex-direction: column;
   gap: 4px;
-  padding-block: 12px;
 }
 
 .project-settings-extension-row-description {

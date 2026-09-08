@@ -167,7 +167,7 @@ const ModelList: Component<{
                       </button>
                     </h3>
                     <Show when={open()}>
-                      <SettingsList>
+                      <SettingsList variant="catalog">
                         <For each={group.items}>
                           {(item) => (
                             <button
