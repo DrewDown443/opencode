@@ -332,6 +332,17 @@ export const SettingsGeneral: Component<{
         <TerminalPlacementSetting />
         <FollowUpBehaviorSetting />
 
+        <Show when={desktop()}>
+          <SettingsRow
+            title={language.t("settings.general.row.pinchZoom.title")}
+            description={language.t("settings.general.row.pinchZoom.description")}
+          >
+            <div data-action="settings-pinch-zoom">
+              <Switch checked={pinchZoom.latest} onChange={onPinchZoomChange} />
+            </div>
+          </SettingsRow>
+        </Show>
+
         <SettingsRow
           title={language.t("session.review.wrapLines")}
           description={language.t("settings.general.row.mobileDiffWrap.description")}
@@ -482,26 +493,6 @@ export const SettingsGeneral: Component<{
     </div>
   )
 
-  // We can probably remove this, right?
-  const DisplaySection = () => (
-    <Show when={desktop()}>
-      <div class="settings-section">
-        <h3 class="settings-section-title">{language.t("settings.general.section.display")}</h3>
-
-        <SettingsList>
-          <SettingsRow
-            title={language.t("settings.general.row.pinchZoom.title")}
-            description={language.t("settings.general.row.pinchZoom.description")}
-          >
-            <div data-action="settings-pinch-zoom">
-              <Switch checked={pinchZoom.latest} onChange={onPinchZoomChange} />
-            </div>
-          </SettingsRow>
-        </SettingsList>
-      </div>
-    </Show>
-  )
-
   return (
     <>
       <div class="settings-tab-header">
@@ -532,8 +523,6 @@ export const SettingsGeneral: Component<{
         <Show when={desktop()}>
           <UpdatesSection />
         </Show>
-
-        <DisplaySection />
 
         <AdvancedSection />
       </div>
