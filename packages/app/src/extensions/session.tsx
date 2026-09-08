@@ -44,7 +44,10 @@ export function useExtensionPanels(input: {
       (keys, previous) => {
         const old = new Set(previous ?? [])
         const tabs = input.tabs()
-        const current = tabs.all().filter((key) => !isExtensionTab(key) || keys.includes(key))
+        // Persisted instances can be waiting for their declarations to mount. Only
+        // remove contributions observed disappearing during this route lifetime.
+        const removed = new Set(previous?.filter((key) => !keys.includes(key)))
+        const current = tabs.all().filter((key) => !removed.has(key))
         const added = keys.filter((key) => !old.has(key) && !current.includes(key))
         if (added.length || current.length !== tabs.all().length) tabs.setAll([...current, ...added])
       },

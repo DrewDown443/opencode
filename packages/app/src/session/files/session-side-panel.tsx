@@ -8,6 +8,7 @@ import { RestrictToElement } from "@dnd-kit/dom/modifiers"
 import { Tabs } from "@opencode/ui/tabs"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Icon } from "@opencode/ui/icon"
+import { Loader } from "@opencode/ui/loader"
 import { ResizeHandle } from "@opencode/ui/resize-handle"
 import { Mark } from "@opencode/ui/logo"
 import { Keybind } from "@opencode/ui/keybind"
@@ -384,9 +385,15 @@ export function SessionSidePanel(props: {
                                         index={tabs().all().indexOf(tab)}
                                         onTabClose={tabs().close}
                                       >
-                                        {panel().props.icon}
-                                        <span>{panel().props.title}</span>
-                                        <Show when={panel().props.badge}>{panel().props.badge}</Show>
+                                        <div class="flex items-center gap-1.5">
+                                          <Show when={panel().props.loading} fallback={panel().props.icon}>
+                                            <Loader />
+                                          </Show>
+                                          <span class="max-w-40 truncate" dir="auto">
+                                            {panel().props.title}
+                                          </span>
+                                          <Show when={panel().props.badge}>{panel().props.badge}</Show>
+                                        </div>
                                       </SortableTab>
                                     )}
                                   </Show>
