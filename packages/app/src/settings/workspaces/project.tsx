@@ -83,7 +83,7 @@ export const SettingsProjectGeneral: Component<{
                   url: props.project.icon?.url,
                   override: model.store.iconOverride,
                 }}
-                class="!size-10 [&_[data-slot=project-avatar-surface]]:!rounded-[6px] [&_[data-slot=project-avatar-surface]]:!text-[20px]"
+                class="!size-8 [&_[data-slot=project-avatar-surface]]:!rounded-[6px] [&_[data-slot=project-avatar-surface]]:!text-[16px]"
               />
               <span classList={{ "project-settings-icon-overlay": true, visible: model.store.iconHover }}>
                 <Icon name={model.store.iconOverride ? "close" : "share"} />
@@ -149,10 +149,19 @@ export const SettingsProjectGeneral: Component<{
               onInput={(event) => model.setStore("startup", event.currentTarget.value)}
               onBlur={model.saveStartup}
             />
-            <span class="project-settings-startup-hint">{language.t("project.settings.worktree.startup.hint")}</span>
+            <div class="project-settings-startup-hint flex flex-col">
+              <span>{inlineVariables(language.t("project.settings.worktree.startup.hint.base"))}</span>
+              <span>{inlineVariables(language.t("project.settings.worktree.startup.hint.new"))}</span>
+            </div>
           </div>
         </SettingsList>
       </div>
     </>
+  )
+}
+
+function inlineVariables(text: string) {
+  return text.split(/(\$[A-Z][A-Z0-9_]*)/g).map((part, index) =>
+    index % 2 === 0 ? part : <code dir="ltr">{part}</code>,
   )
 }

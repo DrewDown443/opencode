@@ -195,8 +195,8 @@
 .project-settings-icon {
   position: relative;
   display: flex;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
   overflow: hidden;
   border: 0;
@@ -302,6 +302,16 @@
   font-size: 13px;
   font-weight: 440;
   line-height: var(--line-height-base);
+}
+
+.project-settings-startup-hint code {
+  padding-inline: 4px;
+  border-radius: 4px;
+  background: var(--v2-background-bg-layer-02);
+  color: var(--v2-text-text-base);
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  unicode-bidi: isolate;
 }
 
 @media (prefers-reduced-motion: reduce) {

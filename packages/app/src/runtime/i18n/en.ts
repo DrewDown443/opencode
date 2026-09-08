@@ -1062,8 +1062,8 @@ export const dict = {
   "project.settings.icon.description": "Recommended: 128×128px. Click or drag to upload an image.",
   "project.settings.color.description": "Used for the project icon when no custom image is set",
   "project.settings.worktree.startup.description": "Runs once after creating a new worktree",
-  "project.settings.worktree.startup.hint":
-    "Use $OPENCODE_WORKTREE_BASE for the base worktree and $OPENCODE_WORKTREE_PATH for the new worktree.",
+  "project.settings.worktree.startup.hint.base": "Use $OPENCODE_WORKTREE_BASE for the base worktree.",
+  "project.settings.worktree.startup.hint.new": "Use $OPENCODE_WORKTREE_PATH for the new worktree.",
   "project.settings.scripts": "Scripts",
   "project.settings.scripts.description": "Configure scripts for this project",
   "project.settings.extensions.description": "View extensions available to this project",
