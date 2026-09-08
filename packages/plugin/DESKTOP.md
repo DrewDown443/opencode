@@ -4,6 +4,25 @@ This draft adds a renderer entrypoint at `@opencode/plugin/desktop` and a truste
 
 ## Contributions
 
+Active routes expose `session.services`: workspace file caches and selection,
+draft attachments, annotations, tab references, scroll state, and panel/sidebar
+layout controls. These services exist while the session route is mounted. Stable
+session identity and the public client remain available while its shell tab is open.
+Feature queries stay in the extension and use TanStack Query.
+
+Panels can use a shared `reference` (for example a `file://` resource) so existing
+document producers can select them. `initial: "closed"` separates availability from
+opening, `default` selects a fallback, and `closable: false` declares a pinned panel.
+`view.tabs.canClose(reference)` lets a feature count user-opened tabs without knowing
+which extensions supply pinned defaults. The host retains activated `group` content
+while a declaration in that group exists, so replacing a file preview preserves its
+surrounding sidebar. Group identity includes the server and session.
+
+Session controls can use `session.header.actions`, `session.panel.toolbar`,
+`session.panel.tools`, and `session.sidebar`. Each receives the session input and
+uses the shared placement rules. Renderer contexts also expose shared translations,
+notifications, file export, and available native path actions.
+
 ```tsx
 import { Plugin } from "@opencode/plugin/desktop"
 import { Panel } from "@opencode/plugin/desktop/solid"

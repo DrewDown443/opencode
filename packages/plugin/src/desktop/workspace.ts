@@ -94,6 +94,7 @@ export interface SessionView {
     open(reference: string): Promise<void>
     setActive(reference: string): void
     close(reference: string): void
+    canClose(reference: string): boolean
     preview(): string | undefined
     previewTab(reference: string): void
   }

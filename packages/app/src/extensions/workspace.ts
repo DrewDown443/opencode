@@ -6,6 +6,8 @@ import { useComposerState } from "@/composer/persistence"
 import { useWorkspaceLocation } from "@/workspaces/location"
 import { useLayout } from "@/shell/state/layout"
 import { useSettings } from "@/settings/model"
+import { useOptionalDesktopExtensions } from "./provider"
+import { useServer } from "@/runtime/server/current"
 
 export function createSessionServices(session: SessionModel): SessionServices {
   const file = useFile()
@@ -14,6 +16,8 @@ export function createSessionServices(session: SessionModel): SessionServices {
   const location = useWorkspaceLocation()
   const layout = useLayout()
   const settings = useSettings()
+  const extensions = useOptionalDesktopExtensions()
+  const server = useServer()
   return {
     files: {
       ...file,
@@ -31,6 +35,13 @@ export function createSessionServices(session: SessionModel): SessionServices {
         active: session.tabs.activeTab,
         open: (reference) => session.layout.tabs().open(reference),
         close: (reference) => session.layout.tabs().close(reference),
+        canClose: (reference) =>
+          extensions?.state.panels.find(
+            (panel) =>
+              panel.key === reference &&
+              panel.session.sessionID === session.identity.sessionID() &&
+              panel.session.server.id === server.key,
+          )?.props.closable !== false,
         setActive: (reference) => session.layout.tabs().setActive(reference),
         preview: () => session.layout.tabs().preview(),
         previewTab: (reference) => session.layout.tabs().previewTab(reference),
