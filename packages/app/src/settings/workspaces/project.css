@@ -109,6 +109,22 @@
   white-space: nowrap;
 }
 
+.project-settings-extension-row-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding-block: 12px;
+}
+
+.project-settings-extension-row-description {
+  color: var(--v2-text-text-muted);
+  font-size: 13px;
+  font-weight: 440;
+  line-height: var(--line-height-base);
+  overflow-wrap: anywhere;
+}
+
 .project-settings-extension-row-status {
   display: flex;
   align-items: center;
