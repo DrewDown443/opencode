@@ -22,6 +22,7 @@ import { useData } from "@/runtime/server/current"
 import { pluginLabels } from "@/providers/catalog/plugin"
 import { ExternalLink } from "@/runtime/platform/external-link"
 import { configuredLanguageServers } from "./project-lsp"
+import { SettingsList } from "@/settings/list"
 import "./project.css"
 
 type SkillItem = {
@@ -32,7 +33,7 @@ type SkillItem = {
 const skillKey = (item: SkillItem) => `${item.name}\n${item.location}`
 
 const ExtensionCard: Component<{ children: JSX.Element }> = (props) => (
-  <div class="project-settings-extension-card settings-extension-list">{props.children}</div>
+  <SettingsList variant="catalog">{props.children}</SettingsList>
 )
 
 const ExtensionRow: Component<{
@@ -41,8 +42,8 @@ const ExtensionRow: Component<{
   description?: JSX.Element
   children?: JSX.Element
 }> = (props) => (
-  <div class="project-settings-extension-row">
-    <div class="project-settings-extension-row-main">
+  <div class="settings-extension-row project-settings-extension-row">
+    <div class="settings-extension-lead">
       <Icon name={props.icon} class="project-settings-extension-row-icon" />
       <div class="project-settings-extension-row-copy">
         <span class="project-settings-extension-row-name settings-extension-name">{props.name}</span>

@@ -163,7 +163,7 @@ export const SettingsModels: Component = () => {
                       </button>
                     </h3>
                     <Show when={expanded()}>
-                      <SettingsList>
+                      <SettingsList variant="catalog">
                         <For each={group.items}>
                           {(item) => {
                             const key = { providerID: item.provider.id, modelID: item.id }
