@@ -204,8 +204,12 @@ export function createPluginContext(input: {
               attention: Boolean(status.attention),
             }
           }),
-        open(sessionID) {
+        open(sessionID, options) {
           if (!host.sessionTabs.enabled()) return false
+          if (options?.focus === false) {
+            host.sessionTabs.open(sessionID)
+            return true
+          }
           host.sessionTabs.select(sessionID)
           return true
         },

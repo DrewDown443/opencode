@@ -487,8 +487,8 @@ export interface UI {
       readonly attention: boolean
       readonly unread?: "activity" | "error"
     }[]
-    /** Opens (or focuses) a tab for a session, adding it when not already open. Returns false when tabs are disabled. */
-    open(sessionID: string): boolean
+    /** Opens a tab for a session, focusing it by default. Returns false when tabs are disabled. */
+    open(sessionID: string, options?: { readonly focus?: boolean }): boolean
     /** Focuses an already-open tab and returns false when it is not open. */
     focus(sessionID: string): boolean
     /** Closes an open tab, or the active tab when omitted, and returns false when no tab matched. */
