@@ -118,7 +118,7 @@ test("project settings open as a nested autosaving view", async ({ page }) => {
   await settings.getByRole("button", { name: "Settings demo", exact: true }).click()
 
   await expect(settings.getByRole("button", { name: "Back to projects", exact: true })).toBeVisible()
-  await expect(settings.getByRole("tab", { name: "General", exact: true })).toBeVisible()
+  await expect(settings.getByRole("tab", { name: "Settings demo", exact: true })).toBeVisible()
   await expect(settings.getByRole("tab", { name: "Worktrees", exact: true })).toBeVisible()
   await expect(settings.getByRole("tab", { name: "Extensions", exact: true })).toBeVisible()
   await expect(settings.getByRole("tab", { name: "Scripts", exact: true })).toHaveCount(0)
@@ -130,6 +130,7 @@ test("project settings open as a nested autosaving view", async ({ page }) => {
   await name.fill("Renamed project")
   await name.blur()
   expect((await saved).postDataJSON()).toEqual({ name: "Renamed project" })
+  await expect(settings.getByRole("tab", { name: "Renamed project", exact: true })).toBeVisible()
 
   const startup = settings.getByRole("textbox", { name: "Worktree startup script", exact: true })
   const scriptSaved = page.waitForRequest(
