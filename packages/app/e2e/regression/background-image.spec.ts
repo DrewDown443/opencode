@@ -48,6 +48,8 @@ test.beforeEach(async ({ page }) => {
 })
 
 test("selects, restores, and removes a background image", async ({ page }) => {
+  const providerTip = page.locator('[data-component="new-session-tip"][data-kind="provider"]')
+  await expect(providerTip).toBeVisible()
   await page.keyboard.press("Control+,")
   const settings = page.getByTestId("settings-screen")
   await expect(settings).toBeFocused()
@@ -62,7 +64,8 @@ test("selects, restores, and removes a background image", async ({ page }) => {
 
   await settings.getByRole("button", { name: "Back to app", exact: true }).click()
   await expect(settings).toBeHidden()
-  await expect(page.locator('[data-component="new-session"][data-background-surface="panel"]')).toBeVisible()
+  await expect(page.locator('[data-component="new-session"][data-background-surface="canvas"]')).toBeVisible()
+  await expect(providerTip).toBeHidden()
   await page.reload()
   await expectAppVisible(page.locator('[data-component="composer-editor"]'))
   await expect(shell).toHaveAttribute("data-background-image", "")

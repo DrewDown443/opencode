@@ -22,9 +22,17 @@
   background-color: color-mix(in srgb, var(--v2-background-bg-base) 72%, transparent);
 }
 
+[data-component="app-shell"][data-background-image] [data-background-surface="canvas"] {
+  background-color: transparent;
+}
+
 [data-component="app-shell"][data-background-image] [data-background-surface="composer"] {
-  background-color: color-mix(in srgb, var(--v2-background-bg-base) 82%, transparent);
+  background-color: color-mix(in srgb, var(--v2-background-bg-base) 55%, transparent);
   backdrop-filter: blur(12px);
+}
+
+[data-component="app-shell"][data-background-image] [data-component="new-session-tip"][data-kind="provider"] {
+  display: none;
 }
 
 @font-face {
