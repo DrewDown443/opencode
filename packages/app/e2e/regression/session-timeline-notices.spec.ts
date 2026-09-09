@@ -191,6 +191,40 @@ test("updates running compactions to failed and cancelled boundaries", async ({ 
   await expect(cancelled).not.toContainText("Summary before cancellation.")
 })
 
+test("shows an interrupted outcome when stopping automatic compaction", async ({ page }) => {
+  const timeline = await setupTimeline(page, {
+    sessionMessages: [user, assistant(true)],
+    sessionStatus: { [sessionID]: { type: "busy" } },
+  })
+  await timeline.send(compactionStarted({ sessionID, reason: "auto", recent: "" }))
+  await timeline.send(compactionDelta({ sessionID, text: "Partial automatic summary." }))
+  const compaction = page.locator('[data-component="session-compaction-message"]')
+  await expect(compaction.getByRole("status").getByLabel("Compacting session", { exact: true })).toBeVisible()
+  await expect(compaction).toContainText("Partial automatic summary.")
+
+  const request = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" && new URL(request.url()).pathname === `/api/session/${sessionID}/interrupt`,
+  )
+  await page.getByRole("button", { name: "Stop", exact: true }).click()
+  await request
+  await timeline.send(
+    compactionFailed({
+      sessionID,
+      reason: "auto",
+      error: { type: "compaction.interrupted", message: "Compaction was interrupted" },
+    }),
+  )
+
+  await expect(compaction.getByText("Session compacting started", { exact: true })).toBeVisible()
+  await expect(compaction.getByText("Session compaction interrupted", { exact: true })).toBeVisible()
+  await expect(compaction.getByText("Session compaction failed", { exact: true })).toHaveCount(0)
+  await expect(compaction.getByText("Session compacted", { exact: true })).toHaveCount(0)
+  await expect(compaction.getByRole("status")).toHaveCount(0)
+  await expect(compaction).not.toContainText("Partial automatic summary.")
+  await expect(compaction).not.toContainText("Compaction was interrupted")
+})
+
 test("moves blocking work to the background with Ctrl+B", async ({ page }) => {
   await setupTimeline(page, {
     settings: {

@@ -108,6 +108,7 @@ const source = {
   "ui.messagePart.compaction.running": "Compacting session",
   "ui.messagePart.compaction.failed": "Session compaction failed",
   "ui.messagePart.compaction.cancelled": "Session compaction cancelled",
+  "ui.messagePart.compaction.interrupted": "Session compaction interrupted",
   "ui.messagePart.providerCompaction": "Session compacted by provider",
   "ui.messagePart.compaction.usage": "{{input}} in · {{output}} out",
   "ui.messagePart.context.details": "Details",

@@ -392,7 +392,12 @@ export function SessionCompactionMessage(props: { message: SessionMessageCompact
   const i18n = useI18n()
   const summary = () => (props.message.status === "failed" ? "" : props.message.summary)
   const error = () => {
-    if (props.message.status !== "failed" || props.message.error.type === "aborted") return ""
+    if (
+      props.message.status !== "failed" ||
+      props.message.error.type === "aborted" ||
+      props.message.error.type === "compaction.interrupted"
+    )
+      return ""
     return props.error
   }
   const compact = createMemo(
@@ -410,22 +415,16 @@ export function SessionCompactionMessage(props: { message: SessionMessageCompact
       output: compact().format(output),
     })
   }
-  const label = createMemo(() =>
-    [
-      i18n.t(
-        props.message.status === "failed"
-          ? props.message.error.type === "aborted"
-            ? "ui.messagePart.compaction.cancelled"
-            : "ui.messagePart.compaction.failed"
-          : props.message.status === "completed" && props.message.providerContext
-            ? "ui.messagePart.providerCompaction"
-            : "ui.messagePart.compaction",
-      ),
-      usage(),
-    ]
-      .filter(Boolean)
-      .join(" · "),
-  )
+  const outcome = createMemo(() => {
+    if (props.message.status !== "failed")
+      return props.message.status === "completed" && props.message.providerContext
+        ? "ui.messagePart.providerCompaction"
+        : "ui.messagePart.compaction"
+    if (props.message.error.type === "aborted") return "ui.messagePart.compaction.cancelled"
+    if (props.message.error.type === "compaction.interrupted") return "ui.messagePart.compaction.interrupted"
+    return "ui.messagePart.compaction.failed"
+  })
+  const label = createMemo(() => [i18n.t(outcome()), usage()].filter(Boolean).join(" · "))
 
   return (
     <div data-component="session-compaction-message">
