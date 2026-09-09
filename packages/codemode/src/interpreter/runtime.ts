@@ -197,48 +197,50 @@ type GeneratorState = {
 
 const promiseResolutionNode: AstNode = { type: "PromiseResolution", start: 0, end: 0 }
 
-export class Interpreter<R> {
-  private scopes: ScopeStack
-  private readonly executeTool: (
-    path: ReadonlyArray<string>,
-    args: Array<unknown>,
-  ) => Effect.Effect<unknown, unknown, R>
-  private readonly invokeSearch: (args: Array<unknown>) => Effect.Effect<unknown, unknown, R>
-  private readonly toolKeys: (path: ReadonlyArray<string>) => ReadonlyArray<string>
-  private readonly logs: Array<string>
-  private readonly promises: PromiseRuntime<R>
+/** One program execution: the tool bridge, promise scheduler, captured logs, and the global scope built once. */
+export class Runtime<R> {
+  readonly runner: Runner<R>
   /** Global names that `new` accepts, in declaration order, for diagnostics. */
-  private readonly constructors: ReadonlyArray<string>
-  private generatorState?: GeneratorState
-  private generatorAsync = false
-  private readonly runner: Runner<R> = {
-    invokeFunction: (fn, args) => this.invokeFunction(fn, args),
-    invokeCallable: (callable, args, node) => this.invokeCallable(callable, args, node),
-    settlePromise: (promise) => this.settlePromise(promise),
-    syncIterator: (value, node) => this.syncIterator(value, node),
-  }
+  readonly constructors: ReadonlyArray<string>
+  private readonly root: Frame<R>
 
   constructor(
-    executeTool: (path: ReadonlyArray<string>, args: Array<unknown>) => Effect.Effect<unknown, unknown, R>,
-    invokeSearch: (args: Array<unknown>) => Effect.Effect<unknown, unknown, R>,
-    toolKeys: (path: ReadonlyArray<string>) => ReadonlyArray<string>,
-    promises: PromiseRuntime<R>,
-    logs: Array<string> = [],
+    readonly executeTool: (path: ReadonlyArray<string>, args: Array<unknown>) => Effect.Effect<unknown, unknown, R>,
+    readonly search: (args: Array<unknown>) => Effect.Effect<unknown, unknown, R>,
+    readonly toolKeys: (path: ReadonlyArray<string>) => ReadonlyArray<string>,
+    readonly promises: PromiseRuntime<R>,
+    readonly logs: Array<string> = [],
   ) {
     const globalScope = new Map<string, Binding>()
-    this.scopes = new ScopeStack([globalScope])
-    this.executeTool = executeTool
-    this.invokeSearch = invokeSearch
-    this.toolKeys = toolKeys
-    this.logs = logs
-    this.promises = promises
-    const host = { runner: this.runner, promises, search: invokeSearch, toolKeys, logs }
-    const bindings = globals(host)
+    // Calling back into the program never reads frame state, so any frame serves; the root is always alive.
+    this.root = new Frame(this, new ScopeStack([globalScope]))
+    this.runner = {
+      invokeFunction: (fn, args) => this.root.invokeFunction(fn, args),
+      invokeCallable: (callable, args, node) => this.root.invokeCallable(callable, args, node),
+      settlePromise: (promise) => this.root.settlePromise(promise),
+      syncIterator: (value, node) => this.root.syncIterator(value, node),
+    }
+    const bindings = globals(this)
     for (const [name, value] of bindings) globalScope.set(name, { mutable: false, value })
     this.constructors = bindings.flatMap(([name, value]) =>
       value instanceof HostFunction && value.construct !== undefined ? [name] : [],
     )
   }
+
+  run(program: Program): Effect.Effect<unknown, unknown, R> {
+    return this.root.run(program)
+  }
+}
+
+/** One activation: the top-level program or a single function call, evaluating against its own scope chain. */
+class Frame<R> {
+  private generatorState?: GeneratorState
+  private generatorAsync = false
+
+  constructor(
+    private readonly runtime: Runtime<R>,
+    private scopes: ScopeStack,
+  ) {}
 
   run(program: Program): Effect.Effect<unknown, unknown, R> {
     const self = this
@@ -266,7 +268,7 @@ export class Interpreter<R> {
       }
 
       // The implicit async body adopts returned promises before copy-out.
-      value = yield* resolvePromiseValue(self.runner, value, program)
+      value = yield* resolvePromiseValue(self.runtime.runner, value, program)
       return value
     }).pipe(Effect.ensuring(Effect.sync(() => self.scopes.pop())))
   }
@@ -276,16 +278,16 @@ export class Interpreter<R> {
     path: ReadonlyArray<string>,
     args: Array<unknown>,
   ): Effect.Effect<Values.Promise, never, R> {
-    return this.createPromise(Effect.suspend(() => this.executeTool(path, args)))
+    return this.createPromise(Effect.suspend(() => this.runtime.executeTool(path, args)))
   }
 
   private createPromise(effect: Effect.Effect<unknown, unknown, R>): Effect.Effect<Values.Promise, never, R> {
-    return this.promises.create(effect)
+    return this.runtime.promises.create(effect)
   }
 
   // Fiber exits make settlement idempotent; yielding prevents inline continuation.
-  private settlePromise(promise: Values.Promise): Effect.Effect<unknown, unknown, never> {
-    const promises = this.promises
+  settlePromise(promise: Values.Promise): Effect.Effect<unknown, unknown, never> {
+    const promises = this.runtime.promises
     return Effect.suspend(() => {
       promises.markObserved(promise)
       return Effect.flatMap(promises.await(promise), (exit) => Effect.andThen(Effect.yieldNow, exit))
@@ -658,7 +660,7 @@ export class Interpreter<R> {
   }
 
   private awaitValue(value: unknown, node: AstNode = promiseResolutionNode): Effect.Effect<unknown, unknown, R> {
-    return Effect.flatMap(resolvePromise(this.runner, this.promises, value, node), (promise) =>
+    return Effect.flatMap(resolvePromise(this.runtime.runner, this.runtime.promises, value, node), (promise) =>
       this.settlePromise(promise),
     )
   }
@@ -680,7 +682,7 @@ export class Interpreter<R> {
     })
   }
 
-  private syncIterator(value: unknown, node: AstNode) {
+  syncIterator(value: unknown, node: AstNode) {
     const iterator = Array.isArray(value)
       ? value[Symbol.iterator]()
       : typeof value === "string"
@@ -830,7 +832,7 @@ export class Interpreter<R> {
 
   private enumerableKeys(value: unknown): Array<string> | undefined {
     if (value instanceof ToolReference) {
-      return [...this.toolKeys(value.path)]
+      return [...this.runtime.toolKeys(value.path)]
     }
     if (Array.isArray(value)) {
       return Object.keys(value)
@@ -1278,7 +1280,7 @@ export class Interpreter<R> {
   // unsupported syntax. User functions are a documented gap; everything else is not a constructor.
   private notConstructible(callee: unknown, node: NewExpression): InterpreterRuntimeError {
     const name = calleeDescription(node.callee)
-    const hint = `Supported constructors: ${this.constructors.join(", ")}.`
+    const hint = `Supported constructors: ${this.runtime.constructors.join(", ")}.`
     const message =
       callee instanceof CodeModeFunction
         ? `${name} cannot be constructed: user-defined constructors and classes are not supported. Call it as a function that returns a plain object instead.`
@@ -1542,7 +1544,7 @@ export class Interpreter<R> {
   }
 
   // The single dispatch for every invocation: call expressions and callbacks share it.
-  private invokeCallable(
+  invokeCallable(
     callable: unknown,
     args: Array<unknown>,
     node: AstNode,
@@ -1565,10 +1567,10 @@ export class Interpreter<R> {
         return callable.generator.asynchronous ? yield* self.createPromise(requested) : yield* requested
       }
       if (callable instanceof IntrinsicReference) {
-        return yield* invokeIntrinsic(self.runner, callable, args, node)
+        return yield* invokeIntrinsic(self.runtime.runner, callable, args, node)
       }
       if (callable instanceof PromiseInstanceMethodReference) {
-        return yield* invokePromiseInstanceMethod(self.runner, self.promises, callable, args, node)
+        return yield* invokePromiseInstanceMethod(self.runtime.runner, self.runtime.promises, callable, args, node)
       }
       if (callable instanceof HostFunction) return yield* (callable as HostFunction<R>).call(args, node)
       if (callable === undefined || callable === null) {
@@ -1607,9 +1609,8 @@ export class Interpreter<R> {
     })
   }
 
-  private invokeFunction(fn: CodeModeFunction, args: Array<unknown>): Effect.Effect<unknown, unknown, R> {
-    const invocation = new Interpreter(this.executeTool, this.invokeSearch, this.toolKeys, this.promises, this.logs)
-    invocation.scopes = new ScopeStack([...fn.capturedScopes, new Map()])
+  invokeFunction(fn: CodeModeFunction, args: Array<unknown>): Effect.Effect<unknown, unknown, R> {
+    const invocation = new Frame(this.runtime, new ScopeStack([...fn.capturedScopes, new Map()]))
     const run = Effect.gen(function* () {
       // Seed all parameters first so defaults cannot fall through to same-named outer bindings.
       const paramScope = invocation.scopes.current()
@@ -1638,7 +1639,9 @@ export class Interpreter<R> {
     // The initial yield assigns the promise before the body can self-resolve.
     const box: { promise?: Values.Promise } = {}
     return Effect.map(
-      this.createPromise(Effect.flatMap(run, (value) => resolvePromiseValue(invocation.runner, value, fn.body, box))),
+      this.createPromise(
+        Effect.flatMap(run, (value) => resolvePromiseValue(invocation.runtime.runner, value, fn.body, box)),
+      ),
       (promise) => {
         box.promise = promise
         return promise
@@ -1647,7 +1650,7 @@ export class Interpreter<R> {
   }
 
   private createGenerator(
-    invocation: Interpreter<R>,
+    invocation: Frame<R>,
     run: Effect.Effect<unknown, unknown, R>,
     asynchronous: boolean,
   ): CodeModeGenerator {
@@ -1666,7 +1669,7 @@ export class Interpreter<R> {
         if (state.draining) return Deferred.await(request.response)
         state.draining = true
         return Effect.andThen(
-          this.promises.fork(
+          this.runtime.promises.fork(
             invocation
               .completeGeneratorRequests(state, true)
               .pipe(Effect.ensuring(Effect.sync(() => (state.draining = false)))),
@@ -1717,7 +1720,7 @@ export class Interpreter<R> {
           yield* invocation.completeGeneratorRequests(state, asynchronous)
           state.completed = true
         })
-        return Effect.andThen(this.promises.fork(body), Deferred.await(request.response))
+        return Effect.andThen(this.runtime.promises.fork(body), Deferred.await(request.response))
       }
       return Deferred.await(request.response)
     })

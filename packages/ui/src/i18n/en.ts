@@ -105,6 +105,7 @@ const source = {
   "ui.messagePart.questions.dismissed": "Questions dismissed",
   "ui.messagePart.compaction": "Session compacted",
   "ui.messagePart.providerCompaction": "Session compacted by provider",
+  "ui.messagePart.compaction.usage": "{{input}} in · {{output}} out",
   "ui.messagePart.context.details": "Details",
   "ui.messagePart.context.read.one": "{{count}} read",
   "ui.messagePart.context.read.other": "{{count}} reads",
@@ -118,8 +119,8 @@ const source = {
   "ui.messagePart.context.thought.other": "Thoughts",
   "ui.messagePart.context.match.one": "({{count}} match)",
   "ui.messagePart.context.match.other": "({{count}} matches)",
-  "ui.messagePart.tools.used.one": "{{count}} used {{tools}}",
-  "ui.messagePart.tools.used.other": "{{count}} used {{tools}}",
+  "ui.messagePart.tools.used.one": "Used {{count}} {{tools}}",
+  "ui.messagePart.tools.used.other": "Used {{count}} {{tools}}",
 
   "ui.list.loading": "Loading",
   "ui.list.empty": "No results",
