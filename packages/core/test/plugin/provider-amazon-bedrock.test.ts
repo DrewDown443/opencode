@@ -1,22 +1,33 @@
 import { describe, expect } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Schedule, Schema } from "effect"
+import { Bus } from "@opencode/core/bus"
 import { Catalog } from "@opencode/core/catalog"
+import { Config } from "@opencode/core/config"
+import { ConfigProviderPlugin } from "@opencode/core/config/plugin/provider"
 import { Integration } from "@opencode/core/integration"
 import { Plugin } from "@opencode/core/plugin"
 import { PluginHost } from "@opencode/core/plugin/host"
-import { AmazonBedrockPlugin, PROFILE_ONLY_BARE_IDS } from "@opencode/core/plugin/provider/amazon-bedrock"
+import {
+  AmazonBedrockPlugin,
+  AmazonBedrockModelsPlugin,
+  PROFILE_ONLY_BARE_IDS,
+} from "@opencode/core/plugin/provider/amazon-bedrock"
 import { Model } from "@opencode/core/model"
 import { Provider } from "@opencode/core/provider"
+import { Document, Event, Info, type Entry } from "@opencode/schema/config"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "./fixture"
 
 const it = testEffect(PluginTestLayer)
 
-const addPlugin = Effect.fn(function* () {
-  const plugin = yield* Plugin.Service
-  const host = yield* PluginHost.make(plugin)
-  yield* AmazonBedrockPlugin.effect(host)
-})
+const addPlugin = (entries: Entry[] = []) =>
+  Effect.gen(function* () {
+    const plugin = yield* Plugin.Service
+    const host = yield* PluginHost.make(plugin)
+    yield* AmazonBedrockPlugin.effect(host)
+    yield* ConfigProviderPlugin.Plugin.effect(host)
+    yield* AmazonBedrockModelsPlugin.effect(host)
+  }).pipe(Effect.provide(Config.testLayer(entries)))
 
 function required<T>(value: T | undefined): T {
   if (value === undefined) throw new Error("Expected value")
@@ -230,6 +241,8 @@ describe("AmazonBedrockPlugin", () => {
         const catalog = yield* seedBedrock()
         const controls = [
           "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+          "anthropic.claude-opus-4-6-v1",
+          "anthropic.claude-sonnet-4-6",
           "amazon.nova-micro-v1:0",
           "openai.gpt-6-astra",
         ]
@@ -240,14 +253,10 @@ describe("AmazonBedrockPlugin", () => {
         })
         yield* addPlugin()
         for (const id of PROFILE_ONLY_BARE_IDS) {
-          expect(required(yield* catalog.model.get(Provider.ID.amazonBedrock, Model.ID.make(id))).enabled).toBe(
-            false,
-          )
+          expect(required(yield* catalog.model.get(Provider.ID.amazonBedrock, Model.ID.make(id))).enabled).toBe(false)
         }
         for (const id of controls) {
-          expect(required(yield* catalog.model.get(Provider.ID.amazonBedrock, Model.ID.make(id))).enabled).toBe(
-            true,
-          )
+          expect(required(yield* catalog.model.get(Provider.ID.amazonBedrock, Model.ID.make(id))).enabled).toBe(true)
         }
       }),
     ),
@@ -262,6 +271,167 @@ describe("AmazonBedrockPlugin", () => {
           expect(yield* catalog.model.get(Provider.ID.amazonBedrock, Model.ID.make(id))).toBeUndefined()
         }
       }),
+    ),
+  )
+
+  it.effect("keeps the London in-region models available and selectable as defaults", () =>
+    withEnv(noAmbientAWS, () =>
+      Effect.gen(function* () {
+        const catalog = yield* seedBedrock({ region: "eu-west-2" })
+        yield* catalog.transform((editor) => {
+          for (const id of ["anthropic.claude-opus-4-6-v1", "anthropic.claude-sonnet-4-6"]) {
+            editor.model.update(Provider.ID.amazonBedrock, Model.ID.make(id), () => {})
+          }
+        })
+        yield* addPlugin([
+          new Document({
+            type: "document",
+            info: Schema.decodeUnknownSync(Info)({
+              model: { providerID: "amazon-bedrock", model: "anthropic.claude-sonnet-4-6" },
+              providers: { "amazon-bedrock": {} },
+            }),
+          }),
+        ])
+        expect((yield* catalog.model.available()).map((model) => model.id)).toEqual(
+          ["anthropic.claude-opus-4-6-v1", "anthropic.claude-sonnet-4-6"].map((id) => Model.ID.make(id)),
+        )
+        expect((yield* catalog.model.default())?.id).toBe(Model.ID.make("anthropic.claude-sonnet-4-6"))
+      }),
+    ),
+  )
+
+  it.effect("uses configured request IDs for availability and default selection", () =>
+    withEnv(noAmbientAWS, () =>
+      Effect.gen(function* () {
+        const catalog = yield* seedBedrock()
+        const profile = Model.ID.make("anthropic.claude-sonnet-4-5-20250929-v1:0")
+        const application = Model.ID.make("anthropic.claude-opus-4-5-20251101-v1:0")
+        const arn = "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/example"
+        yield* catalog.transform((editor) => {
+          for (const id of [profile, application]) editor.model.update(Provider.ID.amazonBedrock, id, () => {})
+        })
+        yield* addPlugin([
+          new Document({
+            type: "document",
+            info: Schema.decodeUnknownSync(Info)({
+              model: { providerID: "amazon-bedrock", model: profile },
+              providers: {
+                "amazon-bedrock": {
+                  models: {
+                    [profile]: { modelID: `us.${profile}` },
+                    [application]: { modelID: arn },
+                    broken: { modelID: "deepseek.r1-v1:0" },
+                  },
+                },
+              },
+            }),
+          }),
+        ])
+        expect((yield* catalog.model.available()).map((model) => model.id)).toEqual([profile, application])
+        expect(yield* catalog.model.default()).toMatchObject({ id: profile, modelID: `us.${profile}` })
+        expect(yield* catalog.model.get(Provider.ID.amazonBedrock, application)).toMatchObject({
+          modelID: arn,
+          enabled: true,
+        })
+      }),
+    ),
+  )
+
+  it.effect("respects effective model packages on custom providers", () =>
+    withEnv(noAmbientAWS, () =>
+      Effect.gen(function* () {
+        const catalog = yield* seedBedrock()
+        yield* addPlugin([
+          new Document({
+            type: "document",
+            info: Schema.decodeUnknownSync(Info)({
+              providers: {
+                custom: {
+                  package: "@opencode/ai/providers/amazon-bedrock",
+                  models: {
+                    runtime: { modelID: "anthropic.claude-opus-5" },
+                    sdk: { modelID: "deepseek.r1-v1:0", package: "aisdk:@ai-sdk/amazon-bedrock" },
+                    mantle: {
+                      modelID: "anthropic.claude-opus-5",
+                      package: "@opencode/ai/providers/amazon-bedrock/mantle",
+                    },
+                    other: { modelID: "anthropic.claude-opus-5", package: "aisdk:@ai-sdk/anthropic" },
+                  },
+                },
+              },
+            }),
+          }),
+        ])
+        expect((yield* catalog.model.available()).map((model) => model.id)).toEqual(
+          ["mantle", "other"].map((id) => Model.ID.make(id)),
+        )
+      }),
+    ),
+  )
+
+  it.effect("honors the latest explicit enable or disable setting", () =>
+    withEnv(noAmbientAWS, () =>
+      Effect.gen(function* () {
+        const catalog = yield* seedBedrock()
+        yield* addPlugin(
+          [true, false].map(
+            (disabled) =>
+              new Document({
+                type: "document",
+                info: Schema.decodeUnknownSync(Info)({
+                  providers: {
+                    "amazon-bedrock": {
+                      models: {
+                        enabled: { modelID: "deepseek.r1-v1:0", disabled },
+                        disabled: { modelID: "deepseek.r1-v1:0", disabled: !disabled },
+                        profile: { modelID: "us.deepseek.r1-v1:0", disabled: true },
+                      },
+                    },
+                  },
+                }),
+              }),
+          ),
+        )
+        expect((yield* catalog.model.available()).map((model) => model.id)).toEqual([Model.ID.make("enabled")])
+      }),
+    ),
+  )
+
+  it.live("refreshes availability when an explicit enable override changes", () =>
+    withEnv(noAmbientAWS, () =>
+      Effect.gen(function* () {
+        const catalog = yield* seedBedrock({ profile: "test" })
+        const config = yield* Config.Test
+        const bus = yield* Bus.Service
+        const plugin = yield* Plugin.Service
+        const host = yield* PluginHost.make(plugin)
+        const id = Model.ID.make("deepseek.r1-v1:0")
+        yield* catalog.transform((editor) => editor.model.update(Provider.ID.amazonBedrock, id, () => {}))
+        yield* AmazonBedrockPlugin.effect(host)
+        yield* ConfigProviderPlugin.Plugin.effect(host)
+        yield* AmazonBedrockModelsPlugin.effect(host)
+        expect(yield* catalog.model.available()).toEqual([])
+
+        for (const disabled of [false, undefined, true, false]) {
+          yield* config.setEntries([
+            new Document({
+              type: "document",
+              info: Schema.decodeUnknownSync(Info)({
+                providers: { "amazon-bedrock": { models: { [id]: disabled === undefined ? {} : { disabled } } } },
+              }),
+            }),
+          ])
+          yield* bus.publish(Event.Updated, {})
+          const models = yield* catalog.model.available().pipe(
+            Effect.repeat({
+              until: (models) => models.some((model) => model.id === id) === (disabled === false),
+              times: 100,
+              schedule: Schedule.spaced("1 millis"),
+            }),
+          )
+          expect(models.some((model) => model.id === id)).toBe(disabled === false)
+        }
+      }).pipe(Effect.provide(Config.testLayer())),
     ),
   )
 })
