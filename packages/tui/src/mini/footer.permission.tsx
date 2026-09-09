@@ -54,7 +54,7 @@ function buttons(
             paddingLeft={1}
             paddingRight={1}
             backgroundColor={option === selected ? theme.actionFocusedBg : transparent}
-            onMouseOver={() => {
+            onMouseMove={() => {
               if (!disabled) onHover(option)
             }}
             onMouseUp={() => {
@@ -361,7 +361,7 @@ export function RunPermissionBody(props: {
                 when={!busy()}
                 fallback={
                   <text fg={props.theme.running} height={1} wrapMode="none" truncate flexShrink={0}>
-                    {compact() ? "Waiting..." : "Waiting for permission event..."}
+                    {compact() ? "Waiting…" : "Waiting for permission event…"}
                   </text>
                 }
               >
@@ -534,7 +534,7 @@ export function RunPermissionBody(props: {
             when={!busy()}
             fallback={
               <text fg={props.theme.running} height={1} wrapMode="none" truncate flexShrink={0}>
-                {compact() ? "Waiting..." : "Waiting for permission event..."}
+                {compact() ? "Waiting…" : "Waiting for permission event…"}
               </text>
             }
           >

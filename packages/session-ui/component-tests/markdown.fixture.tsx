@@ -3,7 +3,7 @@ import { render } from "solid-js/web"
 import { Markdown } from "../src/components/markdown"
 import { preloadMarkdown } from "../src/components/markdown-cache"
 import { MarkdownProvider } from "../src/context/markdown"
-import { OpenCode } from "@opencode-ai/client/promise"
+import { OpenCode } from "@opencode/client/promise"
 import { readLocalImage } from "../../app/src/runtime/server/image"
 
 export {
@@ -13,6 +13,8 @@ export {
   touchCachedMarkdown,
 } from "../src/components/markdown-cache"
 export { renderMermaidSvg } from "../src/components/markdown-mermaid"
+export { MarkdownWorkerDisposedError } from "../src/components/markdown-worker"
+export { preloadMarkdown }
 
 export async function mountMarkdown(options: {
   text: string

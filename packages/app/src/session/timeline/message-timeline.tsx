@@ -1,27 +1,28 @@
-import { createEffect, createMemo, createSignal, For, on, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
+import { Dynamic } from "solid-js/web"
 import { createAnimatedPresence } from "@/runtime/animated-presence"
-import type { SessionUserActions } from "@opencode-ai/session-ui/actions"
-import { Badge } from "@opencode-ai/ui/badge"
-import { DiffChanges } from "@opencode-ai/ui/diff-changes"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { InlineInput } from "@opencode-ai/ui/inline-input"
-import { Keybind } from "@opencode-ai/ui/keybind"
-import { Menu } from "@opencode-ai/ui/menu"
-import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { ProjectAvatar } from "@opencode-ai/ui/project-avatar"
+import type { SessionUserActions } from "@opencode/session-ui/actions"
+import { useData } from "@opencode/session-ui/context"
+import { Button } from "@opencode/ui/button"
+import { DiffChanges } from "@opencode/ui/diff-changes"
+import { Icon } from "@opencode/ui/icon"
+import { IconButton } from "@opencode/ui/icon-button"
+import { InlineInput } from "@opencode/ui/inline-input"
+import { Keybind } from "@opencode/ui/keybind"
+import { Menu } from "@opencode/ui/menu"
+import { TextShimmer } from "@opencode/ui/text-shimmer"
+import { ProjectAvatar } from "@opencode/ui/project-avatar"
 import type { Project } from "@/runtime/server/types"
-import { getFilename } from "@opencode-ai/util/path"
+import { getFilename } from "@opencode/util/path"
 import { Popover } from "@kobalte/core/popover"
 import { SessionContextUsage } from "@/session/timeline/session-context-usage"
 import { useLanguage } from "@/runtime/i18n/language"
-import { useData, useServer } from "@/runtime/server/current"
+import { useServer } from "@/runtime/server/current"
 import { useWorkspaceLocation } from "@/workspaces/location"
-import { Timeline, TimelineRow } from "@opencode-ai/session-ui/timeline/projection"
-import { createSessionTimelineRowRenderer } from "@opencode-ai/session-ui/timeline/row"
-import { getReadyMarkdown, preloadMarkdown } from "@opencode-ai/session-ui/markdown-cache"
+import { Timeline, TimelineRow } from "@opencode/session-ui/timeline/projection"
+import { createSessionTimelineRowRenderer } from "@opencode/session-ui/timeline/row"
+import { getReadyMarkdown, preloadMarkdown } from "@opencode/session-ui/markdown-cache"
 import { createTimelineController, type TimelineController, type TimelineSessionSource } from "./controller"
 import { createTimelineVirtualizer } from "./virtualizer"
 import { containsDirectory, isWorkspaceDirectory, workspaceDirectories } from "@/workspaces/paths"
@@ -31,7 +32,8 @@ import { displayName, getProjectAvatarSource, projectForSession } from "@/shell/
 import { parseCommentNote, readPromptPresentation } from "@/composer/comment-note"
 import { useCommand } from "@/shell/commands/command"
 import { useSettings } from "@/settings/model"
-import { SessionTitleHeader } from "../session-identity-header"
+import { SessionProjectMenu, SessionTitleHeader } from "../session-identity-header"
+import { SessionHeader } from "@/session/header/session-header"
 
 type BackgroundTask = {
   id: string
@@ -46,32 +48,42 @@ type SessionBackground = {
   move: () => Promise<void>
 }
 
-export function BackgroundMoveHint(props: { keybind?: string[] }) {
+export function BackgroundMoveHint(props: { keybind?: string[]; onMove?: () => void }) {
   const language = useLanguage()
   const command = useCommand()
-  const marker = "__OPENCODE_BACKGROUND_KEYBIND__"
-  const parts = createMemo(() => language.t("session.background.moveInline", { keybind: marker }).split(marker))
   const keys = () => props.keybind ?? command.keybindParts("session.background")
   const keybind = () => props.keybind?.join("+") ?? command.keybind("session.background")
 
   return (
-    <div
+    <Button
       data-component="session-background-hint"
-      class="flex h-6 max-w-full items-center justify-center gap-[3px] overflow-hidden text-[13px] font-[440] leading-5 tracking-[-0.04px] text-v2-text-text-muted"
+      type="button"
+      variant="ghost-faint"
+      size="small"
+      class="max-w-full"
       aria-label={language.t("session.background.moveInline", { keybind: keybind() })}
+      onClick={() => props.onMove?.()}
     >
-      <span data-slot="session-background-hint-prefix" class="shrink-0">
-        {parts()[0].trim()}
-      </span>
+      <span class="min-w-0 truncate">{language.t("session.background.moveRunning")}</span>
       <Keybind keys={keys()} variant="neutral" />
-      <span class="min-w-0 truncate">{parts()[1].trim()}</span>
-    </div>
+    </Button>
   )
 }
 
 export function BackgroundWorkSummary(props: { tasks: BackgroundTask[]; mobile?: boolean }) {
   const language = useLanguage()
+  const data = useData()
   const [open, setOpen] = createSignal(false)
+  const [triggerRef, setTriggerRef] = createSignal<HTMLButtonElement>()
+  const tasks = createMemo<BackgroundTask[]>((previous = []) => (props.tasks.length > 0 ? props.tasks : previous))
+  const presence = createAnimatedPresence(
+    () => (props.tasks.length > 0 ? true : undefined),
+    () => triggerRef() ?? null,
+  )
+  createEffect(() => {
+    if (props.tasks.length > 0) return
+    setOpen(false)
+  })
   const taskType = (task: BackgroundTask) => {
     if (task.type === "shell") return language.t("ui.tool.shell")
     if (!task.agent) return language.t("ui.tool.agent.default")
@@ -83,39 +95,56 @@ export function BackgroundWorkSummary(props: { tasks: BackgroundTask[]; mobile?:
       open={open()}
       placement={props.mobile ? "top-end" : language.direction() === "rtl" ? "right-end" : "left-end"}
       gutter={4}
-      onOpenChange={setOpen}
+      onOpenChange={(value) => setOpen(value && props.tasks.length > 0)}
     >
-      <Popover.Trigger
-        as="button"
-        type="button"
-        data-component="session-background-summary"
-        class="flex h-7 w-full items-center gap-2 rounded-[4px] px-3 text-[13px] font-[440] leading-5 tracking-[-0.04px] text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none data-[expanded]:bg-v2-overlay-simple-overlay-pressed"
-        aria-label={language.plural("session.background.runningCount", props.tasks.length)}
-      >
-        <Badge class="!w-4 !px-0 !border-v2-border-border-strong !bg-v2-background-bg-layer-03">
-          {props.tasks.length}
-        </Badge>
-        <TextShimmer
-          as="span"
-          text={language.t("session.background.running")}
-          active
-          class="min-w-0 flex-1 truncate text-start"
-        />
-      </Popover.Trigger>
+      <Show when={presence.present()}>
+        <Popover.Trigger
+          ref={setTriggerRef}
+          as="button"
+          type="button"
+          data-component="session-background-summary"
+          class="flex h-7 w-full items-center gap-2 rounded-[4px] px-3 text-[13px] font-[440] leading-5 tracking-[-0.04px] text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none data-[expanded]:bg-v2-overlay-simple-overlay-pressed duration-150 motion-reduce:animate-none"
+          classList={{
+            "animate-out fade-out fill-mode-forwards": presence.animate() && !presence.show(),
+          }}
+          aria-label={language.plural("session.background.tasksRunning", tasks().length)}
+        >
+          <Icon name="outline-arrow-to-corner-top-right" class="shrink-0 text-v2-icon-icon-muted" />
+          <TextShimmer
+            as="span"
+            text={language.plural("session.background.tasksRunning", tasks().length)}
+            active
+            class="min-w-0 flex-1 truncate text-start"
+          />
+        </Popover.Trigger>
+      </Show>
       <Popover.Portal>
         <Popover.Content
           data-component="session-background-list"
-          class="z-[60] w-[200px] overflow-hidden rounded-[6px] bg-v2-background-bg-layer-01 p-0.5 shadow-[var(--v2-elevation-floating)] outline-none"
+          class="z-[60] w-[200px] overflow-hidden rounded-[6px] bg-v2-background-bg-layer-01 p-0.5 shadow-[var(--v2-elevation-floating)] outline-none data-[closed]:animate-out data-[closed]:fade-out data-[closed]:duration-150 motion-reduce:data-[closed]:animate-none"
         >
-          <For each={props.tasks.slice(0, 10)}>
+          <For each={tasks().slice(0, 10)}>
             {(task) => (
-              <div
+              <Dynamic
+                component={task.type === "subagent" ? "a" : "div"}
                 data-component="session-background-list-item"
-                class="flex h-7 min-w-0 items-center gap-2 rounded-[4px] px-3 text-[13px] font-[440] leading-none tracking-[-0.04px]"
+                class="flex h-7 min-w-0 items-center gap-2 rounded-[4px] px-3 text-[13px] font-[440] leading-[var(--line-height-compact)] tracking-[-0.04px]"
+                classList={{
+                  "hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none":
+                    task.type === "subagent",
+                }}
+                href={task.type === "subagent" ? data.sessionHref?.(task.id) : undefined}
+                onClick={(event: MouseEvent) => {
+                  if (task.type !== "subagent" || !data.navigateToSession) return
+                  if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+                  event.preventDefault()
+                  setOpen(false)
+                  data.navigateToSession(task.id)
+                }}
               >
                 <span class="shrink-0 text-v2-text-text-base">{taskType(task)}</span>
                 <span class="min-w-0 flex-1 truncate text-v2-text-text-faint">{task.label}</span>
-              </div>
+              </Dynamic>
             )}
           </For>
         </Popover.Content>
@@ -168,7 +197,7 @@ function WorkspaceMoveAction(props: {
             : "flex h-[46px] w-full items-center gap-2 rounded-b-[6px] px-3 pe-9 pt-2.5 text-[13px] font-[440] leading-5 tracking-[-0.04px] text-v2-text-text-muted focus-visible:outline-none"
         }
       >
-        <Icon name="workspace-new" class="shrink-0 text-v2-icon-icon-muted" />
+        <Icon name="outline-worktree" class="shrink-0 text-v2-icon-icon-muted" />
         <span class="min-w-0 truncate">{language.t("workspace.move.title")}</span>
       </SessionWorkspaceMenu>
       <button
@@ -240,7 +269,10 @@ export function SessionSummaryPanel(props: {
           gutter={props.mobile ? 4 : -22}
           class={`${row} hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none data-[expanded]:bg-v2-overlay-simple-overlay-pressed`}
         >
-          <Icon name={props.local ? "monitor" : "workspace-isolated"} class="shrink-0 text-v2-icon-icon-muted" />
+          <Icon
+            name={props.local ? "monitor" : "outline-worktree"}
+            class={`shrink-0 ${props.local ? "text-v2-icon-icon-muted" : "text-v2-icon-icon-accent"}`}
+          />
           <span dir="auto" class="min-w-0 flex-1 truncate text-start">
             {location()}
           </span>
@@ -252,7 +284,7 @@ export function SessionSummaryPanel(props: {
             when={props.branch}
             fallback={
               <span class="flex min-w-0 items-center gap-1.5">
-                <span>{language.t("session.summary.noBranch")}</span>
+                <span class="shrink-0 whitespace-nowrap">{language.t("session.summary.noBranch")}</span>
                 <Show when={props.baseBranch}>
                   {(base) => (
                     <>
@@ -287,9 +319,17 @@ export function SessionSummaryPanel(props: {
             )}
           </Show>
         </button>
-        <Show when={props.backgroundTasks.length > 0}>
-          <BackgroundWorkSummary tasks={props.backgroundTasks} mobile={props.mobile} />
-        </Show>
+        <div
+          class="grid transition-[grid-template-rows] duration-150 ease-out motion-reduce:transition-none"
+          classList={{
+            "grid-rows-[1fr]": props.backgroundTasks.length > 0,
+            "grid-rows-[0fr]": props.backgroundTasks.length === 0,
+          }}
+        >
+          <div class="min-h-0 overflow-hidden">
+            <BackgroundWorkSummary tasks={props.backgroundTasks} mobile={props.mobile} />
+          </div>
+        </div>
       </div>
       <Show when={props.local && props.diffs && props.diffs.length > 0 && props.moveEligible}>
         <WorkspaceMoveAction
@@ -329,8 +369,9 @@ type MessageTimelineProps = {
   workspaceMoveEligible: boolean
   onSummaryOpenChange: (open: boolean) => void
   anchor: (id: string) => string
-  setRevealMessage?: (fn: (id: string) => void) => void
+  setRevealMessage?: (fn: (id: string, partID?: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
+  search?: JSX.Element
 }
 
 export function MessageTimeline(props: MessageTimelineProps) {
@@ -341,8 +382,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
     if (message?.type === "assistant" && message.time.completed !== undefined) {
       const content = Timeline.resolveContent(message, tail.group.ref.partID)
       // Start the required worker job while the rest of the selected view is constructed.
-      if (content?.type === "text" && content.text.trim())
-        void preloadMarkdown(content.text, tail.group.ref.partID).catch(() => undefined)
+      if (content?.type === "text" && content.text.trim()) {
+        const preload = new AbortController()
+        onCleanup(() => preload.abort())
+        void preloadMarkdown(content.text, tail.group.ref.partID, preload.signal).catch(() => undefined)
+      }
     }
   }
   return (
@@ -358,8 +402,8 @@ function MessageTimelineView(
   },
 ) {
   const language = useLanguage()
-  const data = useData()
   const server = useServer()
+  const data = server.ctx.data
   const settings = useSettings()
   const sdk = useWorkspaceLocation()
   const sessionID = props.data.sessionID
@@ -380,10 +424,9 @@ function MessageTimelineView(
   const workspaceSession = createMemo(() => isWorkspaceDirectory(project(), sessionDirectory()))
   const showProjectIcon = () => import.meta.env.VITE_OPENCODE_CHANNEL !== "prod" && settings.general.showProjectIcon()
   const avatarProject = createMemo(() => {
-    if (!showProjectIcon()) return
     const session = props.session.data.info()
     if (!session) return
-    return projectForSession(session, server.ctx.projects.list())
+    return projectForSession(session, server.ctx.projects.list()) ?? project()
   })
   const projectAvatar = () => (
     <ProjectAvatar
@@ -416,6 +459,7 @@ function MessageTimelineView(
   const messageByID = projection.messageByID
   const virtualized = createTimelineVirtualizer({
     sessionKey: () => `${server.key}/${props.data.sessionID()}`,
+    presentationKey: () => JSON.stringify(props.data.timelineDetail()),
     projection,
     showHeader,
     pinned,
@@ -523,6 +567,7 @@ function MessageTimelineView(
     reasoningMode: props.data.reasoningMode,
     shellToolDefaultOpen: props.data.shellToolPartsExpanded,
     editToolDefaultOpen: props.data.editToolPartsExpanded,
+    timelineDetail: props.data.timelineDetail,
     disclosure: virtualized.disclosure,
     centered: () => props.centered,
     padding: turnPadding,
@@ -591,44 +636,38 @@ function MessageTimelineView(
     <VirtualizedTimeline
       workspaceSession={workspaceSession}
       bottomSpacer={
-        <>
-          <Show when={showWorking()}>
+        <Show when={showWorking() || backgroundHintPresence.present()}>
+          <div
+            classList={{
+              "min-w-0 w-full max-w-full": true,
+              "md:max-w-[1000px] md:mx-auto": props.centered,
+            }}
+          >
             <div
-              data-component="session-working"
-              role="status"
-              classList={{
-                "min-w-0 w-full max-w-full": true,
-                "md:max-w-[1000px] md:mx-auto": props.centered,
-              }}
+              class={`flex h-9 items-center gap-2 pt-3 text-[13px] font-[530] leading-text-compact ${turnPadding()}`}
             >
-              <div class={`flex h-9 items-start pt-3 text-[13px] font-[530] leading-text-compact ${turnPadding()}`}>
-                <TextShimmer text={language.t("session.timeline.working")} active />
-              </div>
+              <Show when={showWorking()}>
+                <div data-component="session-working" role="status">
+                  <TextShimmer text={language.t("session.timeline.working")} active />
+                </div>
+              </Show>
+              <Show when={backgroundHintPresence.present()}>
+                <div
+                  ref={setBackgroundHintRef}
+                  data-component="session-background-hint-row"
+                  class="duration-150 motion-reduce:animate-none"
+                  classList={{
+                    "animate-in fade-in": backgroundHintPresence.animate() && backgroundHintPresence.show(),
+                    "animate-out fade-out fill-mode-forwards":
+                      backgroundHintPresence.animate() && !backgroundHintPresence.show(),
+                  }}
+                >
+                  <BackgroundMoveHint onMove={props.background.move} />
+                </div>
+              </Show>
             </div>
-          </Show>
-          <Show when={backgroundHintPresence.present()}>
-            <div
-              data-component="session-background-hint-row"
-              classList={{
-                "min-w-0 w-full max-w-full": true,
-                "md:max-w-[1000px] md:mx-auto": props.centered,
-              }}
-            >
-              <div
-                ref={setBackgroundHintRef}
-                class="duration-150 motion-reduce:animate-none"
-                classList={{
-                  [`flex items-start ${showWorking() ? "h-6" : "h-9 pt-3"} ${turnPadding()}`]: true,
-                  "animate-in fade-in": backgroundHintPresence.animate() && backgroundHintPresence.show(),
-                  "animate-out fade-out fill-mode-forwards":
-                    backgroundHintPresence.animate() && !backgroundHintPresence.show(),
-                }}
-              >
-                <BackgroundMoveHint />
-              </div>
-            </div>
-          </Show>
-        </>
+          </div>
+        </Show>
       }
       deferred={(row) => {
         if (row._tag !== "AssistantPart" || row.group.type !== "part") return false
@@ -641,36 +680,13 @@ function MessageTimelineView(
           <SessionTitleHeader>
             <div class="h-12 w-full flex items-center justify-between gap-2">
               <div class="flex items-center gap-1 min-w-0 flex-1">
-                <div class="flex items-center min-w-0 flex-1 w-full">
-                  <Show
-                    when={workspaceSession()}
-                    fallback={
-                      <span class="flex size-6 shrink-0 items-center justify-center text-v2-icon-icon-muted">
-                        <Show when={showProjectIcon()} fallback={<Icon name="monitor" />}>
-                          {projectAvatar()}
-                        </Show>
-                      </span>
-                    }
-                  >
-                    <Tooltip
-                      placement="bottom-start"
-                      value={sessionDirectory()}
-                      contentClass="max-w-[calc(100vw-32px)] break-all"
-                    >
-                      <span
-                        tabIndex={0}
-                        aria-label={sessionDirectory()}
-                        classList={{
-                          "flex size-6 shrink-0 items-center justify-center": true,
-                          "text-v2-icon-icon-accent": !showProjectIcon(),
-                        }}
-                      >
-                        <Show when={showProjectIcon()} fallback={<Icon name="workspace-isolated" />}>
-                          {projectAvatar()}
-                        </Show>
-                      </span>
-                    </Tooltip>
-                  </Show>
+                <div class="flex items-center gap-0.5 min-w-0 flex-1 w-full">
+                  <SessionProjectMenu
+                    project={avatarProject()}
+                    directory={sessionDirectory()}
+                    workspace={workspaceSession()}
+                    showProjectIcon={showProjectIcon()}
+                  />
                   <Show when={parentID()}>
                     <button
                       type="button"
@@ -694,7 +710,7 @@ function MessageTimelineView(
                       fallback={
                         <h1
                           data-slot="session-title-child"
-                          class="truncate text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base w-fit rounded-[6px] px-2 py-1 hover:bg-v2-overlay-simple-overlay-hover"
+                          class="truncate text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base w-fit rounded-[6px] px-1 py-1 hover:bg-v2-overlay-simple-overlay-hover"
                           onClick={openTitleEditor}
                         >
                           {childTitle()}
@@ -709,7 +725,7 @@ function MessageTimelineView(
                         dir="auto"
                         value={title.draft}
                         disabled={props.pending.rename()}
-                        class="block text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base field-sizing-content self-start rounded-[6px] px-2 py-1"
+                        class="block text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base field-sizing-content rounded-[6px] px-1 py-1"
                         style={{
                           "--inline-input-shadow": "none",
                           "text-align": "start",
@@ -732,11 +748,65 @@ function MessageTimelineView(
                       />
                     </Show>
                   </Show>
+                  <Show when={!parentID() && sessionID()} keyed>
+                    {(id) => (
+                      <Menu
+                        gutter={6}
+                        placement="bottom-start"
+                        open={title.menuOpen}
+                        onOpenChange={(open) => setTitle("menuOpen", open)}
+                      >
+                        <Menu.Trigger
+                          as={IconButton}
+                          icon={<Icon name="outline-dots" />}
+                          variant="ghost-muted"
+                          size="large"
+                          class="shrink-0"
+                          aria-label={language.t("common.moreOptions")}
+                          aria-expanded={title.menuOpen}
+                        />
+                        <Menu.Portal>
+                          <Menu.Content
+                            class="session-options-menu w-max"
+                            style={{ "min-width": "0" }}
+                            onCloseAutoFocus={(event) => {
+                              if (!title.pendingRename) return
+                              event.preventDefault()
+                              setTitle("pendingRename", false)
+                              openTitleEditor()
+                            }}
+                          >
+                            <Show when={!parentID()}>
+                              <Menu.Item
+                                onSelect={() => {
+                                  setTitle("pendingRename", true)
+                                  setTitle("menuOpen", false)
+                                }}
+                              >
+                                {language.t("common.rename")}
+                              </Menu.Item>
+                              <Menu.Item onSelect={() => void props.action.export(id)}>
+                                {language.t("common.export")}…
+                              </Menu.Item>
+                            </Show>
+                            <Show when={!parentID()}>
+                              {/* TODO: Need a session archive API. */}
+                              <Menu.Separator />
+                              <Menu.Item onSelect={() => props.action.showDelete(id)}>
+                                {language.t("common.delete")}…
+                              </Menu.Item>
+                            </Show>
+                          </Menu.Content>
+                        </Menu.Portal>
+                      </Menu>
+                    )}
+                  </Show>
                 </div>
               </div>
               <Show when={sessionID()} keyed>
                 {(id) => (
                   <div class="shrink-0 flex items-center gap-2">
+                    {props.search}
                     <SessionContextUsage placement="bottom" />
                     <Show when={!parentID() && project()}>
                       {(project) => (
@@ -775,56 +845,7 @@ function MessageTimelineView(
                         </Popover>
                       )}
                     </Show>
-                    <Show when={!parentID()}>
-                      <Menu
-                        gutter={6}
-                        placement="bottom-end"
-                        open={title.menuOpen}
-                        onOpenChange={(open) => {
-                          setTitle("menuOpen", open)
-                          if (open) return
-                        }}
-                      >
-                        <Menu.Trigger
-                          as={IconButton}
-                          icon={<Icon name="outline-dots" />}
-                          variant="ghost-muted"
-                          size="large"
-                          aria-label={language.t("common.moreOptions")}
-                          aria-expanded={title.menuOpen}
-                        />
-                        <Menu.Portal>
-                          <Menu.Content
-                            style={{ width: "120px", "min-width": "120px" }}
-                            onCloseAutoFocus={(event) => {
-                              if (title.pendingRename) {
-                                event.preventDefault()
-                                setTitle("pendingRename", false)
-                                openTitleEditor()
-                                return
-                              }
-                            }}
-                          >
-                            <Menu.Item
-                              onSelect={() => {
-                                setTitle("pendingRename", true)
-                                setTitle("menuOpen", false)
-                              }}
-                            >
-                              {language.t("common.rename")}
-                            </Menu.Item>
-                            <Menu.Item onSelect={() => void props.action.export(id)}>
-                              {language.t("common.export")}...
-                            </Menu.Item>
-                            {/* TODO: Need a session archive API. */}
-                            <Menu.Separator />
-                            <Menu.Item onSelect={() => props.action.showDelete(id)}>
-                              {language.t("common.delete")}...
-                            </Menu.Item>
-                          </Menu.Content>
-                        </Menu.Portal>
-                      </Menu>
-                    </Show>
+                    <SessionHeader />
                   </div>
                 )}
               </Show>

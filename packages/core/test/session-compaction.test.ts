@@ -1,32 +1,32 @@
 import { expect, test } from "bun:test"
-import { LLMClient, LLMEvent, LanguageModel, ToolDefinition, type LLMRequest } from "@opencode-ai/ai"
-import { OpenAIChat } from "@opencode-ai/ai/protocols"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { llmClient } from "@opencode-ai/core/effect/app-node-platform"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Bus } from "@opencode-ai/core/bus"
-import { EventTable } from "@opencode-ai/core/event/sql"
-import { SessionCompaction } from "@opencode-ai/core/session/compaction"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionModelRequest } from "@opencode-ai/core/session/model-request"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
-import { SessionTable } from "@opencode-ai/core/session/sql"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { Session } from "@opencode-ai/core/session"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { App } from "@opencode-ai/core/app"
-import { Agent } from "@opencode-ai/core/agent"
-import { Model } from "@opencode-ai/core/model"
-import { Provider } from "@opencode-ai/core/provider"
-import { Location } from "@opencode-ai/core/location"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Money } from "@opencode-ai/schema/money"
-import { Skill } from "@opencode-ai/schema/skill"
-import { Shell } from "@opencode-ai/schema/shell"
+import { LLMClient, LLMEvent, LanguageModel, ToolDefinition, type LLMRequest } from "@opencode/ai"
+import { OpenAIChat } from "@opencode/ai/protocols"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { llmClient } from "@opencode/core/effect/app-node-platform"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Bus } from "@opencode/core/bus"
+import { EventTable } from "@opencode/core/event/sql"
+import { SessionCompaction } from "@opencode/core/session/compaction"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionModelRequest } from "@opencode/core/session/model-request"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionRunnerModel } from "@opencode/core/session/runner/model"
+import { SessionTable } from "@opencode/core/session/sql"
+import { SessionStore } from "@opencode/core/session/store"
+import { Session } from "@opencode/core/session"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { App } from "@opencode/core/app"
+import { Agent } from "@opencode/core/agent"
+import { Model } from "@opencode/core/model"
+import { Provider } from "@opencode/core/provider"
+import { Location } from "@opencode/core/location"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Money } from "@opencode/schema/money"
+import { Skill } from "@opencode/schema/skill"
+import { Shell } from "@opencode/schema/shell"
 import { DateTime, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { asc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
@@ -51,7 +51,7 @@ const client = Layer.mock(LLMClient.Service)({
   stream: (request: LLMRequest) => {
     requests.push(request)
     return Stream.make(
-      LLMEvent.textDelta({ id: "summary", text: "manual summary" }),
+      LLMEvent.textDelta({ id: "summary", text: "## Objective\n- manual summary" }),
       LLMEvent.stepFinish({
         index: 0,
         reason: { normalized: "stop" },
@@ -91,9 +91,10 @@ const it = testEffect(
 )
 
 test("compaction prompt preserves detailed work state and relevant files", () => {
-  const prompt = SessionCompaction.buildPrompt({ context: ["conversation history"] })
+  const prompt = SessionCompaction.buildPrompt(false)
 
-  expect(prompt).toContain("## Work State\n### Completed")
+  expect(prompt).toContain("## Work State")
+  expect(prompt).toContain("### Completed")
   expect(prompt).toContain("### Active")
   expect(prompt).toContain("### Blocked")
   expect(prompt).toContain("## Relevant Files")
@@ -123,29 +124,31 @@ test("compaction truncation does not split surrogate pairs", () => {
 })
 
 test("compaction prompt requires the checkpoint headings in order", () => {
-  const prompt = SessionCompaction.buildPrompt({ context: ["Conversation history"] })
+  const prompt = SessionCompaction.buildPrompt(false)
   expect(prompt.match(/^#{2,3} .+$/gm)).toEqual([
     "## Objective",
-    "## Important Details",
+    "## Requirements",
+    "## Decisions",
     "## Work State",
     "### Completed",
     "### Active",
     "### Blocked",
     "## Next Move",
     "## Relevant Files",
+    "## Important Context",
   ])
-  expect(prompt).toContain("one or two brief sentences")
-  expect(prompt).toContain("constraints/preferences, decisions and why")
-  expect(prompt).toContain("immediate concrete action")
-  expect(prompt).toContain("next action if known")
-  expect(prompt).toContain("Keep every section, even when empty.")
 })
 
-test("compaction points an existing summary to the following history", () => {
-  const prompt = SessionCompaction.buildPrompt({ previousSummary: "Previous summary", context: ["Recent history"] })
+test("compaction update prompt rewrites legacy checkpoints only when asked", () => {
+  const rewrite = "The existing checkpoint was written with an earlier format"
+  expect(SessionCompaction.buildPrompt(true, true)).toContain(rewrite)
+  expect(SessionCompaction.buildPrompt(true)).not.toContain(rewrite)
+  expect(SessionCompaction.buildPrompt(false, true)).not.toContain(rewrite)
+})
 
-  expect(prompt.split("\n", 1)[0]).toBe("Update the anchored summary below using the conversation history below.")
-  expect(prompt).not.toContain("conversation history above")
+test("compaction prompts prohibit task execution", () => {
+  for (const update of [false, true])
+    expect(SessionCompaction.buildPrompt(update)).toContain("Do not continue the task or call tools")
 })
 
 it.effect("auto compaction estimates current content against the buffered prompt ceiling", () =>
@@ -202,6 +205,20 @@ it.effect("auto compaction estimates current content against the buffered prompt
     const inputLimited = { context: 400_000, input: 272_000, output: 128_000 }
     expect(compaction.required(input(251_999, inputLimited))).toBe(false)
     expect(compaction.required(input(252_000, inputLimited))).toBe(true)
+    const native = (
+      tokens: number,
+      limit: { context: number; input?: number; output: number } = inputLimited,
+      threshold?: number,
+    ) => {
+      const selected = input(tokens, limit)
+      return { ...selected, resolved: { ...selected.resolved, compaction: { mode: "provider" as const, threshold } } }
+    }
+    expect(compaction.required(native(251_999))).toBe(false)
+    expect(compaction.required(native(252_000))).toBe(true)
+    expect(compaction.required(native(99_999, inputLimited, 100_000))).toBe(false)
+    expect(compaction.required(native(100_000, inputLimited, 100_000))).toBe(true)
+    expect(compaction.required(native(252_000, inputLimited, 500_000))).toBe(true)
+    expect(compaction.required(native(1_000_000, { context: 0, input: undefined, output: 0 }, 100_000))).toBe(false)
 
     const contextLimited = { context: 100_000, output: 10_000 }
     expect(compaction.required(input(79_999, contextLimited))).toBe(false)
@@ -305,6 +322,16 @@ const insertSession = (id: Session.ID, overrides?: Partial<typeof SessionTable.$
       .pipe(Effect.flatMap((session) => (session ? Effect.succeed(session) : Effect.die(`session missing: ${id}`))))
   })
 
+const loaded = (session: Session.Info, messages: readonly SessionMessage.Info[]) => ({
+  session,
+  messages,
+  model: resolved,
+  agent: { id: Agent.defaultID, info: Agent.Info.default(Agent.defaultID) },
+  initial: "Session instructions",
+  instructionUpdate: "",
+  tools: { definitions: [], execute: () => Effect.die("Compaction must not execute tools") },
+})
+
 it.effect("manual compaction summarizes short context instead of no-op", () =>
   Effect.gen(function* () {
     requests = []
@@ -329,6 +356,25 @@ it.effect("manual compaction summarizes short context instead of no-op", () =>
     }
     const session = yield* insertSession(sessionID, { parent_id: parentID })
     const modelRequests = yield* SessionModelRequest.Service
+    const messages = [
+      userMessage,
+      SessionMessage.Shell.make({
+        id: SessionMessage.ID.create(),
+        type: "shell",
+        shellID: Shell.ID.make("sh_background"),
+        status: "exited",
+        command: "pwd",
+        metadata: { background: true },
+        output: { output: "display-only-output", cursor: 19, size: 19, truncated: false },
+        time: { created: DateTime.makeUnsafe(0), completed: DateTime.makeUnsafe(1) },
+      }),
+      SessionMessage.Synthetic.make({
+        id: SessionMessage.ID.create(),
+        type: "synthetic",
+        text: "User shell pwd completed: /project",
+        time: { created: DateTime.makeUnsafe(2) },
+      }),
+    ]
 
     const delta = yield* bus
       .subscribe(SessionEvent.Compaction.Delta)
@@ -337,31 +383,15 @@ it.effect("manual compaction summarizes short context instead of no-op", () =>
     expect(
       yield* compaction.compactManual({
         session,
-        resolveModel: () => Effect.succeed(resolved),
+        resolveContext: () => Effect.succeed(loaded(session, messages)),
         prepare: modelRequests.prepare,
-        messages: [
-          userMessage,
-          SessionMessage.Shell.make({
-            id: SessionMessage.ID.create(),
-            type: "shell",
-            shellID: Shell.ID.make("sh_background"),
-            status: "exited",
-            command: "pwd",
-            metadata: { background: true },
-            output: { output: "display-only-output", cursor: 19, size: 19, truncated: false },
-            time: { created: DateTime.makeUnsafe(0), completed: DateTime.makeUnsafe(1) },
-          }),
-          SessionMessage.Synthetic.make({
-            id: SessionMessage.ID.create(),
-            type: "synthetic",
-            text: "User shell pwd completed: /project",
-            time: { created: DateTime.makeUnsafe(2) },
-          }),
-        ],
+        messages,
         inputID: SessionMessage.ID.make("msg_manual_compaction"),
       }),
     ).toEqual({ status: "completed" })
-    expect(Array.from(yield* Fiber.join(delta)).map((event) => event.data.text)).toEqual(["manual summary"])
+    expect(Array.from(yield* Fiber.join(delta)).map((event) => event.data.text)).toEqual([
+      "## Objective\n- manual summary",
+    ])
 
     expect(requests).toHaveLength(1)
     expect(requests[0]?.promptCacheKey).toBe(sessionID)
@@ -380,7 +410,7 @@ it.effect("manual compaction summarizes short context instead of no-op", () =>
     expect(JSON.stringify(requests[0]?.messages)).toContain("User shell pwd completed: /project")
     expect(JSON.stringify(requests[0]?.messages)).not.toContain("display-only-output")
     expect(yield* store.context(sessionID)).toMatchObject([
-      { type: "compaction", reason: "manual", summary: "manual summary", recent: "" },
+      { type: "compaction", reason: "manual", summary: "## Objective\n- manual summary", recent: "" },
     ])
     expect(yield* store.get(sessionID)).toMatchObject({
       cost: 0.0000233,
@@ -415,7 +445,7 @@ it.effect("manual compaction records model resolution failures without calling t
     expect(
       yield* compaction.compactManual({
         session,
-        resolveModel: () =>
+        resolveContext: () =>
           Effect.fail(
             new SessionRunnerModel.ModelUnavailableError({
               providerID: Provider.ID.make("test"),
@@ -461,19 +491,20 @@ it.effect("forked session compaction reuses the fork root prompt cache key", () 
       fork_boundary: { type: "before", messageID: SessionMessage.ID.create() },
     })
     const modelRequests = yield* SessionModelRequest.Service
+    const messages = [
+      SessionMessage.User.make({
+        id: SessionMessage.ID.create(),
+        type: "user",
+        text: "Summarize the forked conversation.",
+        time: { created: DateTime.makeUnsafe(0) },
+      }),
+    ]
     expect(
       yield* compaction.compactManual({
         session,
-        resolveModel: () => Effect.succeed(resolved),
+        resolveContext: () => Effect.succeed(loaded(session, messages)),
         prepare: modelRequests.prepare,
-        messages: [
-          {
-            id: SessionMessage.ID.create(),
-            type: "user",
-            text: "Summarize the forked conversation.",
-            time: { created: DateTime.makeUnsafe(0) },
-          },
-        ],
+        messages,
         inputID: SessionMessage.ID.make("msg_fork_compaction"),
       }),
     ).toEqual({ status: "completed" })

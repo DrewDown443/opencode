@@ -7,8 +7,8 @@ import {
   type SessionInfo,
   type SessionMessageInfo,
   type SkillInfo,
-} from "@opencode-ai/client/promise"
-import { withTimestampedFallback } from "@opencode-ai/util/session-title-fallback"
+} from "@opencode/client/promise"
+import { withTimestampedFallback } from "@opencode/util/session-title-fallback"
 import type {
   AgentSideConnection,
   AuthenticateRequest,
@@ -40,7 +40,7 @@ import type {
   SetSessionModeResponse,
 } from "@agentclientprotocol/sdk"
 import { OPENCODE_VERSION } from "../version"
-import { SessionMessage } from "@opencode-ai/schema/session-message"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { buildConfigOptions, parseModelSelection, type ConfigOptionProvider } from "./config-option"
 import { promptContentToParts } from "./content"
 import {
@@ -400,7 +400,8 @@ function turnStart(messageID: string, slash: PreparedPrompt["slash"], skill: Ski
 
 async function loadCatalog(client: OpenCodeClient, cwd: string): Promise<Catalog> {
   const location = { directory: cwd }
-  // Location plugins initialize asynchronously, so the first ACP request may observe an empty catalog.
+  await client.plugin.awaitActivation({ location })
+  // Some providers discover models in the background after activation has settled.
   const deadline = Date.now() + 5_000
   let missing = "No models are available"
   while (Date.now() < deadline) {

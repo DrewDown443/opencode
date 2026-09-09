@@ -2,9 +2,9 @@ export * as Ripgrep from "./ripgrep.js"
 
 import { Context, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
-import { Entry, Match } from "@opencode-ai/schema/filesystem"
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
-import { collectStream, waitForAbort } from "@opencode-ai/util/process"
+import { Entry, Match } from "@opencode/schema/filesystem"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
+import { collectStream, waitForAbort } from "@opencode/util/process"
 import { Environment } from "./environment/index.js"
 import { NonNegativeInt, PositiveInt, RelativePath } from "./schema.js"
 import { RipgrepBinary } from "./ripgrep/binary.js"
@@ -74,6 +74,8 @@ export interface GrepInput {
   readonly pattern: string
   readonly file?: string
   readonly include?: string
+  readonly literal?: boolean
+  readonly caseSensitive?: boolean
   readonly limit: number
   readonly signal?: AbortSignal
 }
@@ -220,6 +222,8 @@ const layer = Layer.effect(
             "--json",
             "--hidden",
             "--no-messages",
+            ...(input.literal ? ["--fixed-strings"] : []),
+            ...(input.caseSensitive === false ? ["--ignore-case"] : []),
             ...(input.include ? [`--glob=${input.include}`] : []),
             "--glob=!**/.git/**",
             "--",

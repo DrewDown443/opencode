@@ -1,5 +1,5 @@
-import { resolveThemeVariant } from "@opencode-ai/ui/theme/resolve"
-import type { DesktopTheme } from "@opencode-ai/ui/theme/types"
+import { resolveThemeVariant } from "@opencode/ui/theme/resolve"
+import type { DesktopTheme } from "@opencode/ui/theme/types"
 import oc2ThemeJson from "../../../../ui/src/theme/themes/oc-2.json"
 import { app, BrowserWindow, nativeImage, nativeTheme } from "electron"
 import type { Path } from "effect"
@@ -97,6 +97,11 @@ export function setPinchZoomEnabled(enabled: boolean) {
 
 export function getPinchZoomEnabled() {
   return getStore().get(PINCH_ZOOM_ENABLED_KEY) === true
+}
+
+export function setZoomFactor(win: BrowserWindow, factor: number) {
+  win.webContents.setZoomFactor(clampZoom(factor))
+  updateZoom(win)
 }
 
 export function wireZoom(win: BrowserWindow) {

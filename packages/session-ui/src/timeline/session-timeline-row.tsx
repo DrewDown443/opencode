@@ -3,11 +3,11 @@ import type {
   SessionMessageInfo,
   SessionMessageUser,
   SessionStatus,
-} from "@opencode-ai/client/promise"
-import { Card } from "@opencode-ai/ui/card"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
+} from "@opencode/client/promise"
+import { useI18n } from "@opencode/ui/context/i18n"
+import { Tooltip } from "@opencode/ui/tooltip"
 import { For, Show, createMemo, type Accessor, type JSX } from "solid-js"
+import { Dynamic } from "solid-js/web"
 import type { SessionUserActions, SessionUserComment } from "../actions"
 import { useData } from "../context"
 import { TimelineSeparator } from "../components/timeline-separator"
@@ -22,6 +22,9 @@ import {
 import { AssistantReasoningContent, SessionCompactionMessage } from "../message/message-content"
 import type { ContextGroupPart } from "../tools/tool-renderer"
 import { SessionRetry } from "../components/session-retry"
+import { SessionError } from "../components/session-error"
+import { timelineCategory, type TimelineDetail } from "./detail"
+import { currentToolFailed } from "../message/current-tool-state"
 import {
   createReactiveTimelineProjection,
   Timeline,
@@ -49,9 +52,11 @@ export function createSessionTimelineRowRenderer(input: {
   reasoningMode: Accessor<ReasoningMode>
   shellToolDefaultOpen: Accessor<boolean>
   editToolDefaultOpen: Accessor<boolean>
+  timelineDetail?: Accessor<TimelineDetail>
   disclosure: {
     value: (key: string) => boolean | undefined
     set: (key: string, open: boolean) => void
+    patchGroupKeys?: Map<string, string>
   }
   centered?: Accessor<boolean>
   padding?: Accessor<string>
@@ -59,6 +64,23 @@ export function createSessionTimelineRowRenderer(input: {
 }) {
   const i18n = useI18n()
   const data = useData()
+  // Cached timelines retain subgroup identities alongside their disclosure choices.
+  const patchGroupKeys = input.disclosure.patchGroupKeys ?? new Map<string, string>()
+  const patchPartKeys = new WeakMap<SessionMessageAssistant["content"][number], string>()
+  const patchOwners = createMemo(() => {
+    const owners = new Map<string, string>()
+    input.projection.rows().forEach((row) => {
+      if (row._tag !== "AssistantPart" || row.group.type !== "context") return
+      row.group.refs.forEach((ref) => {
+        const content = Timeline.resolveContent(input.projection.messageByID().get(ref.messageID), ref.partID)
+        if (content?.type !== "tool" || content.name !== "patch" || content.state.status === "error") return
+        const part = `${ref.messageID}:${ref.partID}`
+        const key = patchGroupKeys.get(part)
+        if (key && !owners.has(key)) owners.set(key, part)
+      })
+    })
+    return owners
+  })
   const workingTurn = (messageID: string) =>
     input.status().type !== "idle" && input.projection.activeMessageID() === messageID
   const duration = (messageID: string) => {
@@ -104,10 +126,35 @@ export function createSessionTimelineRowRenderer(input: {
         const group = row().group
         if (group.type !== "context") return []
         const contents = indexGroupContents(group.refs)
+        const lastAssistant = input.projection.assistantMessagesByParent().get(row().userMessageID)?.at(-1)
         return group.refs.flatMap<ContextGroupPart>((ref) => {
           const content = contents.get(ref.messageID)?.get(ref.partID)
-          if (content?.type === "tool") return [content]
-          if (content?.type === "reasoning") return [{ ...content, id: ref.partID }]
+          if (content?.type === "tool") {
+            patchPartKeys.set(content, `${ref.messageID}:${ref.partID}`)
+            return [content]
+          }
+          if (content?.type === "reasoning")
+            return [
+              {
+                ...content,
+                id: ref.partID,
+                streaming:
+                  workingTurn(row().userMessageID) &&
+                  input.status().type === "busy" &&
+                  lastAssistant?.id === ref.messageID &&
+                  lastAssistant.time.completed === undefined &&
+                  !lastAssistant.error &&
+                  !lastAssistant.retry &&
+                  lastAssistant.content.at(-1) === content &&
+                  content.time?.completed === undefined,
+              },
+            ]
+          const message = input.projection.messageByID().get(ref.messageID)
+          if (ref.messageID !== ref.partID || !message) return []
+          if (message.type === "shell")
+            return [{ type: "shell", id: ref.partID, render: () => <Shell messageID={ref.messageID} grouped /> }]
+          if (message.type !== "assistant" && message.type !== "user")
+            return [{ type: "notice", id: ref.partID, render: () => <Notice messageID={ref.messageID} grouped /> }]
           return []
         })
       })
@@ -115,9 +162,30 @@ export function createSessionTimelineRowRenderer(input: {
       return (
         <SessionContextToolGroup
           parts={parts()}
-          reasoningDefaultOpen={input.reasoningMode() === "full"}
+          patchGroupKey={(tools) => {
+            const parts = tools.map((tool) => patchPartKeys.get(tool)!)
+            // After a split, only the subgroup with the earliest surviving member keeps the old anchor.
+            const key =
+              parts
+                .map((part) => patchGroupKeys.get(part))
+                .find((key) => key !== undefined && parts.includes(patchOwners().get(key)!)) ?? parts[0]!
+            parts.forEach((part) => patchGroupKeys.set(part, key))
+            return key
+          }}
+          reasoningDefaultOpen={
+            input.timelineDetail
+              ? input.timelineDetail().thinking.details === "expanded"
+              : input.reasoningMode() === "full"
+          }
           reasoningOpen={(id) => input.disclosure.value(id)}
           onReasoningOpenChange={(id, open) => input.disclosure.set(id, open)}
+          toolDefaultOpen={(tool) => (input.timelineDetail ? contentDefaultOpen(tool) : false)}
+          toolOpen={(id) => input.disclosure.value(`${row().group.key}:tool:${id}`)}
+          onToolOpenChange={(id, open) => input.disclosure.set(`${row().group.key}:tool:${id}`, open)}
+          fileOpen={(path) =>
+            input.disclosure.value(`patch:${path}`) ?? input.timelineDetail?.().edit.details === "expanded"
+          }
+          onFileOpenChange={(path, open) => input.disclosure.set(`patch:${path}`, open)}
           open={input.disclosure.value(key()) === true}
           busy={
             workingTurn(row().userMessageID) &&
@@ -155,6 +223,7 @@ export function createSessionTimelineRowRenderer(input: {
           fileOpen={(path) => {
             const open = input.disclosure.value(`${row().group.key}:file:${path}`)
             if (open !== undefined) return open
+            if (input.timelineDetail) return input.timelineDetail().edit.details === "expanded"
             if (tools()[0]?.name !== "edit" || path !== firstPath()) return false
             return input.disclosure.value(row().group.key) ?? input.editToolDefaultOpen()
           }}
@@ -179,9 +248,7 @@ export function createSessionTimelineRowRenderer(input: {
     })
     const defaultOpen = createMemo(() => {
       const item = content()
-      if (!item) return undefined
-      if (item.type === "reasoning") return input.reasoningMode() === "full"
-      return currentContentDefaultOpen(item, input.shellToolDefaultOpen(), input.editToolDefaultOpen())
+      return item ? contentDefaultOpen(item) : undefined
     })
     const disclosureKey = () => (content()?.type === "reasoning" ? ref()!.partID : row().group.key)
     return (
@@ -207,11 +274,30 @@ export function createSessionTimelineRowRenderer(input: {
     )
   }
 
+  function contentDefaultOpen(item: SessionMessageAssistant["content"][number]) {
+    if (input.timelineDetail) {
+      const category = timelineCategory(item)
+      if (
+        category &&
+        input.timelineDetail()[category].placement === "hidden" &&
+        item.type === "tool" &&
+        currentToolFailed(item)
+      )
+        return true
+      if (category === "shell" || category === "edit" || category === "thinking")
+        return input.timelineDetail()[category].details === "expanded"
+    }
+    if (item.type === "reasoning") return input.reasoningMode() === "full"
+    return currentContentDefaultOpen(item, input.shellToolDefaultOpen(), input.editToolDefaultOpen())
+  }
+
   const notice = (message: SessionMessageInfo) => {
     if (message.type === "agent-switched")
       return {
-        label: i18n.t("ui.tool.agent.default"),
-        data: message.previous ? `${message.previous} → ${message.agent}` : message.agent,
+        label: i18n.t("ui.sessionTimeline.notice.agentChanged"),
+        data: message.previous
+          ? `${capitalizeAgent(message.previous)} → ${capitalizeAgent(message.agent)}`
+          : capitalizeAgent(message.agent),
       }
     if (message.type === "model-switched") return undefined
     if (message.type === "skill") return { label: i18n.t("ui.tool.skill"), data: message.name }
@@ -271,6 +357,206 @@ export function createSessionTimelineRowRenderer(input: {
     </div>
   )
 
+  function Notice(props: { messageID: string; grouped?: boolean }) {
+    const inset = () => (props.grouped ? "" : padding())
+    const message = createMemo(() => input.projection.messageByID().get(props.messageID))
+    const compaction = createMemo(() => {
+      const value = message()
+      return value?.type === "compaction" ? value : undefined
+    })
+    const compactionError = createMemo(() => {
+      const value = compaction()
+      if (value?.status !== "failed") return ""
+      return unwrapErrorMessage(value.error.message)
+    })
+    const moved = createMemo(() => {
+      const value = message()
+      return value?.type === "location-switched" ? value : undefined
+    })
+    const model = createMemo(() => {
+      const value = message()
+      if (value?.type !== "model-switched") return undefined
+      const match = data.store.provider?.all?.get(value.model.providerID)
+      return {
+        providerID: value.model.providerID,
+        variant: value.model.variant,
+        label: i18n.t("ui.sessionTimeline.notice.modelSwitched", {
+          model: match?.models?.[value.model.id]?.name ?? value.model.id,
+        }),
+      }
+    })
+    const content = createMemo(() => {
+      const value = message()
+      return value ? notice(value) : undefined
+    })
+    const childID = createMemo(() => {
+      const value = message()
+      if (value?.type !== "synthetic" || value.metadata?.source !== "subagent") return
+      const id = value.metadata.childID
+      if (typeof id === "string" && id) return id
+    })
+    const href = createMemo(() => {
+      const id = childID()
+      if (id) return data.sessionHref?.(id)
+    })
+    const clickable = createMemo(() => !!(childID() && (data.navigateToSession || href())))
+    const open = () => {
+      const id = childID()
+      if (id) data.navigateToSession?.(id)
+    }
+    const navigate = (event: MouseEvent) => {
+      if (!childID() || !data.navigateToSession) return
+      if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      event.preventDefault()
+      open()
+    }
+    const navigateKey = (event: KeyboardEvent) => {
+      if (!clickable() || href()) return
+      if (event.key !== "Enter" && event.key !== " ") return
+      event.preventDefault()
+      open()
+    }
+    return (
+      <>
+        <Show when={compaction()}>
+          {(message) => (
+            <div data-slot="session-turn-message-container" class={`w-full ${inset()}`}>
+              <div data-slot="session-turn-compaction">
+                <SessionCompactionMessage message={message()} error={compactionError()} />
+              </div>
+            </div>
+          )}
+        </Show>
+        <Show
+          when={moved()}
+          fallback={
+            <Show
+              when={model()}
+              fallback={
+                <Show when={content()}>
+                  {(content) => (
+                    <Show
+                      when={content().items?.length}
+                      fallback={
+                        <Dynamic
+                          component={href() ? "a" : "div"}
+                          data-slot="session-timeline-notice"
+                          class={`block w-full truncate ${props.grouped ? "py-1" : "pt-3 pb-1"} text-13-regular leading-text-compact text-text-weak ${inset()}`}
+                          classList={{ "cursor-pointer": clickable() }}
+                          href={href()}
+                          role={clickable() && !href() ? "link" : undefined}
+                          tabIndex={clickable() && !href() ? 0 : undefined}
+                          onClick={navigate}
+                          onKeyDown={navigateKey}
+                        >
+                          <bdi
+                            dir="auto"
+                            class="font-[530]"
+                            classList={{ "text-v2-text-text-faint": message()?.type === "agent-switched" }}
+                          >
+                            {content().label}
+                          </bdi>
+                          <Show when={content().data}>
+                            {(data) => (
+                              <span classList={{ "ms-2": message()?.type === "agent-switched" }}>
+                                <Show when={message()?.type !== "agent-switched"}>{" · "}</Show>
+                                <bdi dir="auto">{data()}</bdi>
+                              </span>
+                            )}
+                          </Show>
+                        </Dynamic>
+                      }
+                    >
+                      <div data-slot="session-timeline-notice" class={`w-full py-1 ${inset()}`}>
+                        <div class="flex min-h-5 min-w-0 items-center gap-2 overflow-hidden">
+                          <bdi
+                            dir="auto"
+                            class="shrink-0 text-[13px] font-[530] leading-text-compact tracking-[-0.04px] text-v2-text-text-faint"
+                          >
+                            {content().label}
+                          </bdi>
+                          <For each={content().items}>
+                            {(item) => (
+                              <bdi
+                                dir="auto"
+                                class="min-w-0 truncate text-[13px] font-[440] leading-text-compact tracking-[-0.04px] text-v2-text-text-faint"
+                              >
+                                {item}
+                              </bdi>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+                    </Show>
+                  )}
+                </Show>
+              }
+            >
+              {(model) => (
+                <div data-slot="session-timeline-notice" data-type="model-switched" class={`w-full py-2 ${inset()}`}>
+                  <TimelineSeparator label={model().label} providerID={model().providerID} variant={model().variant} />
+                </div>
+              )}
+            </Show>
+          }
+        >
+          {(message) => (
+            <div
+              data-slot="session-timeline-notice"
+              data-type="location-switched"
+              class={`flex h-7 w-full min-w-0 items-center gap-2 py-1 text-[13px] leading-text-compact tracking-[-0.04px] text-v2-text-text-faint ${inset()}`}
+            >
+              <Tooltip
+                appearance="compact"
+                placement="top"
+                value={i18n.t("ui.sessionTimeline.notice.movedTooltip")}
+                class="shrink-0"
+                triggerTabIndex={0}
+              >
+                <bdi data-slot="session-timeline-notice-label" dir="auto" class="font-[530]">
+                  {i18n.t("ui.sessionTimeline.notice.movedTo")}
+                </bdi>
+              </Tooltip>{" "}
+              <bdi data-slot="session-timeline-notice-value" dir="ltr" class="min-w-0 truncate font-[440]">
+                {message().location.directory}
+              </bdi>
+            </div>
+          )}
+        </Show>
+      </>
+    )
+  }
+
+  function Shell(props: { messageID: string; grouped?: boolean }) {
+    const message = createMemo(() => {
+      const value = input.projection.messageByID().get(props.messageID)
+      return value?.type === "shell" ? value : undefined
+    })
+    const defaultOpen = createMemo(() => {
+      if (!input.timelineDetail) return input.shellToolDefaultOpen()
+      const value = message()
+      return (
+        input.timelineDetail().shell.details === "expanded" ||
+        (input.timelineDetail().shell.placement === "hidden" &&
+          (value?.status === "timeout" || (value?.status === "exited" && value.exit !== undefined && value.exit !== 0)))
+      )
+    })
+    return (
+      <Show when={message()}>
+        {(message) => (
+          <div data-slot="session-turn-message-container" class={`w-full ${props.grouped ? "" : padding()}`}>
+            <SessionShellMessage
+              message={message()}
+              defaultOpen={defaultOpen()}
+              open={input.disclosure.value(message().id) ?? (input.timelineDetail ? defaultOpen() : undefined)}
+              onOpenChange={(open) => input.disclosure.set(message().id, open)}
+            />
+          </div>
+        )}
+      </Show>
+    )
+  }
+
   const render = (row: Accessor<TimelineRow.TimelineRow>, onSizeChange?: () => void) => {
     if (row()._tag === "TurnGap") return <div data-timeline-row="TurnGap" aria-hidden="true" class="h-6" />
     if (row()._tag === "UserMessage") {
@@ -315,24 +601,9 @@ export function createSessionTimelineRowRenderer(input: {
         if (value._tag !== "Shell") throw new Error("Expected a shell timeline row")
         return value
       }
-      const message = createMemo(() => {
-        const value = input.projection.messageByID().get(current().messageID)
-        return value?.type === "shell" ? value : undefined
-      })
       return (
         <Frame row={current()}>
-          <Show when={message()}>
-            {(message) => (
-              <div data-slot="session-turn-message-container" class={`w-full ${padding()}`}>
-                <SessionShellMessage
-                  message={message()}
-                  defaultOpen={input.shellToolDefaultOpen()}
-                  open={input.disclosure.value(message().id)}
-                  onOpenChange={(open) => input.disclosure.set(message().id, open)}
-                />
-              </div>
-            )}
-          </Show>
+          <Shell messageID={current().messageID} />
         </Frame>
       )
     }
@@ -342,140 +613,9 @@ export function createSessionTimelineRowRenderer(input: {
         if (value._tag !== "Notice") throw new Error("Expected a notice timeline row")
         return value
       }
-      const message = createMemo(() => input.projection.messageByID().get(current().messageID))
-      const compaction = createMemo(() => {
-        const value = message()
-        return value?.type === "compaction" ? value : undefined
-      })
-      const compactionError = createMemo(() => {
-        const value = compaction()
-        if (value?.status !== "failed") return ""
-        return unwrapErrorMessage(value.error.message)
-      })
-      const moved = createMemo(() => {
-        const value = message()
-        return value?.type === "location-switched" ? value : undefined
-      })
-      const model = createMemo(() => {
-        const value = message()
-        if (value?.type !== "model-switched") return undefined
-        const match = data.store.provider?.all?.get(value.model.providerID)
-        return {
-          providerID: value.model.providerID,
-          variant: value.model.variant,
-          label: i18n.t("ui.sessionTimeline.notice.modelSwitched", {
-            model: match?.models?.[value.model.id]?.name ?? value.model.id,
-          }),
-        }
-      })
-      const content = createMemo(() => {
-        const value = message()
-        return value ? notice(value) : undefined
-      })
       return (
         <Frame row={current()}>
-          <Show when={compaction()}>
-            {(message) => (
-              <div data-slot="session-turn-message-container" class={`w-full ${padding()}`}>
-                <div data-slot="session-turn-compaction">
-                  <SessionCompactionMessage message={message()} error={compactionError()} />
-                </div>
-              </div>
-            )}
-          </Show>
-          <Show
-            when={moved()}
-            fallback={
-              <Show
-                when={model()}
-                fallback={
-                  <Show when={content()}>
-                    {(content) => (
-                      <Show
-                        when={content().items?.length}
-                        fallback={
-                          <div
-                            data-slot="session-timeline-notice"
-                            class={`w-full truncate pt-3 pb-1 text-13-regular text-text-weak ${padding()}`}
-                          >
-                            <bdi dir="auto" class="text-13-medium">
-                              {content().label}
-                            </bdi>
-                            <Show when={content().data}>
-                              {(data) => (
-                                <span>
-                                  {" "}
-                                  · <bdi dir="auto">{data()}</bdi>
-                                </span>
-                              )}
-                            </Show>
-                          </div>
-                        }
-                      >
-                        <div data-slot="session-timeline-notice" class={`w-full py-1 ${padding()}`}>
-                          <div class="flex min-h-5 min-w-0 items-center gap-2 overflow-hidden">
-                            <bdi
-                              dir="auto"
-                              class="shrink-0 text-[13px] font-[530] leading-text-compact tracking-[-0.04px] text-v2-text-text-faint"
-                            >
-                              {content().label}
-                            </bdi>
-                            <For each={content().items}>
-                              {(item) => (
-                                <bdi
-                                  dir="auto"
-                                  class="min-w-0 truncate text-[13px] font-[440] leading-text-compact tracking-[-0.04px] text-v2-text-text-faint"
-                                >
-                                  {item}
-                                </bdi>
-                              )}
-                            </For>
-                          </div>
-                        </div>
-                      </Show>
-                    )}
-                  </Show>
-                }
-              >
-                {(model) => (
-                  <div
-                    data-slot="session-timeline-notice"
-                    data-type="model-switched"
-                    class={`w-full py-2 ${padding()}`}
-                  >
-                    <TimelineSeparator
-                      label={model().label}
-                      providerID={model().providerID}
-                      variant={model().variant}
-                    />
-                  </div>
-                )}
-              </Show>
-            }
-          >
-            {(message) => (
-              <div
-                data-slot="session-timeline-notice"
-                data-type="location-switched"
-                class={`flex h-7 w-full min-w-0 items-center gap-2 py-1 text-[13px] leading-text-compact tracking-[-0.04px] text-v2-text-text-faint ${padding()}`}
-              >
-                <Tooltip
-                  appearance="compact"
-                  placement="top"
-                  value={i18n.t("ui.sessionTimeline.notice.movedTooltip")}
-                  class="shrink-0"
-                  triggerTabIndex={0}
-                >
-                  <bdi data-slot="session-timeline-notice-label" dir="auto" class="font-[530]">
-                    {i18n.t("ui.sessionTimeline.notice.movedTo")}
-                  </bdi>
-                </Tooltip>{" "}
-                <bdi data-slot="session-timeline-notice-value" dir="ltr" class="min-w-0 truncate font-[440]">
-                  {message().location.directory}
-                </bdi>
-              </div>
-            )}
-          </Show>
+          <Notice messageID={current().messageID} />
         </Frame>
       )
     }
@@ -536,8 +676,15 @@ export function createSessionTimelineRowRenderer(input: {
                     id={current().ref.partID}
                     content={content()}
                     streaming
-                    defaultOpen={input.reasoningMode() === "full"}
-                    open={input.disclosure.value(current().ref.partID)}
+                    defaultOpen={
+                      input.timelineDetail
+                        ? input.timelineDetail().thinking.details === "expanded"
+                        : input.reasoningMode() === "full"
+                    }
+                    open={
+                      input.disclosure.value(current().ref.partID) ??
+                      (input.timelineDetail ? input.timelineDetail().thinking.details === "expanded" : undefined)
+                    }
                     onOpenChange={(open) => input.disclosure.set(current().ref.partID, open)}
                     onContentRendered={onSizeChange}
                   />
@@ -577,9 +724,7 @@ export function createSessionTimelineRowRenderer(input: {
     return (
       <Frame row={current()}>
         <div data-slot="session-turn-message-container" class={`w-full ${padding()}`}>
-          <Card variant="error" class="error-card">
-            {current().text}
-          </Card>
+          <SessionError message={current().text} />
         </div>
       </Frame>
     )
@@ -594,4 +739,8 @@ export function createSessionTimelineRowRenderer(input: {
   }
 
   return { Row }
+}
+
+function capitalizeAgent(agent: string) {
+  return agent.slice(0, 1).toUpperCase() + agent.slice(1)
 }

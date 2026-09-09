@@ -1,25 +1,40 @@
 export * as SdkInstances from "./instances"
 
-import { Instance } from "@opencode-ai/core/instance"
-import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
-import { Plugin } from "@opencode-ai/core/plugin"
-import type { InstancePlugins } from "@opencode-ai/core/plugin/instance"
-import { SdkPlugins } from "@opencode-ai/core/plugin/sdk"
-import { Location } from "@opencode-ai/schema/location"
-import type { Session } from "@opencode-ai/schema/session"
-import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
-import type { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Duration, Effect, Layer, LayerMap, Scope } from "effect"
+import { Instance } from "@opencode/core/instance"
+import { LocationServiceMap } from "@opencode/core/location-service-map"
+import { Plugin } from "@opencode/core/plugin"
+import type { InstancePlugins } from "@opencode/core/plugin/instance"
+import { Location } from "@opencode/schema/location"
+import type { Session } from "@opencode/schema/session"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
+import type { LayerNode } from "@opencode/util/effect/layer-node"
+import { Context, Duration, Effect, Layer, LayerMap, Scope } from "effect"
 
 export interface Configuration {
   readonly plugins: InstancePlugins.List
 }
 
-export interface Options {
+export interface Options<R = never> {
   /** Select a sharing key within the Session's current Location. Must not initialize plugins. */
   readonly key: (session: Session.Info) => string
-  /** Reconstruct configuration on a cache miss. Resources belong to the instance Scope. */
-  readonly configure: (key: string) => Effect.Effect<Configuration, unknown, Scope.Scope>
+  /**
+   * Reconstruct configuration on a cache miss. Resources belong to the instance Scope; other requirements
+   * are the services the SDK entrypoint was built with.
+   */
+  readonly configure: (key: string) => Effect.Effect<Configuration, unknown, R | Scope.Scope>
+}
+
+/** Closes `configure` over services captured where the SDK entrypoint was built; the host graph has none of its own. */
+export function provide<R>(options: Options<R>, context: Context.Context<R>): Options {
+  return {
+    key: options.key,
+    // The ambient side wins the merge, so the instance Scope owns configured resources rather than the
+    // build Scope that was captured alongside the services.
+    configure: (key) =>
+      options
+        .configure(key)
+        .pipe(Effect.updateContext((ambient: Context.Context<Scope.Scope>) => Context.merge(context, ambient))),
+  }
 }
 
 /** Replaces the host's `Instance.node`; `replacements` resolves lazily so instances inherit the final host graph. */
@@ -27,7 +42,7 @@ export function node(options: Options, replacements: () => LayerNode.Replacement
   return makeGlobalNode({
     service: Instance.Service,
     layer: layer(options, replacements),
-    deps: [LocationServiceMap.node, SdkPlugins.node],
+    deps: [LocationServiceMap.node],
   })
 }
 
@@ -37,7 +52,6 @@ export function layer(options: Options, replacements: () => LayerNode.Replacemen
     Effect.gen(function* () {
       const scope = yield* Effect.scope
       const locations = yield* LocationServiceMap.Service
-      const sdk = yield* SdkPlugins.Service
       const key = (session: Session.Info) => ({
         key: options.key(session),
         ...LocationServiceMap.canonical(session.location),
@@ -48,17 +62,6 @@ export function layer(options: Options, replacements: () => LayerNode.Replacemen
           Layer.unwrap(
             Effect.gen(function* () {
               const configuration = yield* options.configure(input.key).pipe(Effect.orDie)
-              // A host/instance ID collision fails the whole plugin generation, which leaves no inventory
-              // trace to check after activation. Reject it before constructing anything.
-              const collisions = configuration.plugins.filter((plugin) =>
-                sdk.all().some((host) => host.id === plugin.id),
-              )
-              if (collisions.length > 0)
-                yield* Effect.die(
-                  new Error(
-                    `Instance plugin IDs collide with host plugins: ${collisions.map((plugin) => plugin.id).join(", ")}`,
-                  ),
-                )
               return Instance.layer(Location.Ref.make({ directory: input.directory, workspaceID: input.workspaceID }), {
                 plugins: configuration.plugins,
                 replacements: [
@@ -73,6 +76,7 @@ export function layer(options: Options, replacements: () => LayerNode.Replacemen
                   Effect.gen(function* () {
                     const plugins = yield* Plugin.Service
                     yield* plugins.awaitActivation
+                    // Covers setup failures and IDs colliding with host plugins; Core reports both in the inventory.
                     const failed = (yield* plugins.list()).filter(
                       (plugin) =>
                         plugin.state.status === "failed" &&

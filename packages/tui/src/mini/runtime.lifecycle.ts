@@ -16,7 +16,7 @@ import {
   type CliRenderer,
   type ScrollbackWriter,
 } from "@opentui/core"
-import { isFallbackTitle } from "@opencode-ai/util/session-title-fallback"
+import { isFallbackTitle } from "@opencode/util/session-title-fallback"
 import { monoSnapshot } from "./mono"
 import { entrySplash, exitSplash } from "./splash"
 import { resolveRunTheme } from "./theme"
@@ -175,7 +175,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
   const setTitle = (title?: string) => {
     if (input.host.platform !== "linux") return
     if (!title || isFallbackTitle(title)) return renderer.setTerminalTitle("OpenCode")
-    renderer.setTerminalTitle(`OC | ${title.length > 40 ? title.slice(0, 37) + "..." : title}`)
+    renderer.setTerminalTitle(`OC | ${title.length > 40 ? title.slice(0, 37) + "…" : title}`)
   }
   setTitle(input.sessionTitle)
   const theme = await resolveRunTheme(renderer, tuiConfig.theme, mono)

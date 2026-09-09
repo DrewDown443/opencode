@@ -1,6 +1,6 @@
-import type { SessionStatsInfo } from "@opencode-ai/client"
-import { Plugin } from "@opencode-ai/plugin/tui"
-import { activityCalendar } from "@opencode-ai/util/activity-calendar"
+import type { SessionStatsInfo } from "@opencode/client"
+import { Plugin } from "@opencode/plugin/tui"
+import { activityCalendar } from "@opencode/util/activity-calendar"
 import { TextAttributes } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
@@ -171,7 +171,7 @@ function StatsPage(props: { context: Plugin.Context; onClose: () => void }) {
             <text fg={theme.text.feedback.error.default}>Could not load stats. Reopen /stats to try again.</text>
           }
         >
-          <Show when={result()} fallback={<text fg={theme.text.subdued}>Gathering your stats...</text>}>
+          <Show when={result()} fallback={<text fg={theme.text.subdued}>Gathering your stats…</text>}>
             {(value) => <StatsPoster stats={value()} />}
           </Show>
         </Show>

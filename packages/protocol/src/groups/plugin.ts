@@ -1,5 +1,5 @@
-import { Location } from "@opencode-ai/schema/location"
-import { Plugin } from "@opencode-ai/schema/plugin"
+import { Location } from "@opencode/schema/location"
+import { Plugin } from "@opencode/schema/plugin"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { InvalidRequestError, ServiceUnavailableError } from "../errors.js"
@@ -17,6 +17,21 @@ export const PluginGroup = HttpApiGroup.make("server.plugin")
           identifier: "v2.plugin.list",
           summary: "List plugins",
           description: "Retrieve enabled server plugins and their current status.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.post("plugin.awaitActivation", "/api/plugin/await-activation", {
+      query: LocationQuery,
+      success: HttpApiSchema.NoContent,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.plugin.awaitActivation",
+          summary: "Wait for plugin activation",
+          description:
+            "Wait for configured plugin activation at a Location to settle, including missing-package installs. Completion does not imply every plugin succeeded or background resource discovery finished. Cancelling this wait does not cancel activation.",
         }),
       ),
   )

@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import type { JsonValue, OpenCodeEvent, SessionMessageInfo } from "@opencode-ai/client/promise"
+import type { JsonValue, OpenCodeEvent, SessionMessageInfo } from "@opencode/client/promise"
 import { Duration, Effect, Layer } from "effect"
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
@@ -207,6 +207,7 @@ function mockHandlers(config: MockServerConfig, state: { cursors: Map<string, st
       )
       .handleAll({
         health: () => Effect.succeed({ healthy: true, version: "2.0.0", pid: 1 }),
+        config: () => Effect.succeed([]),
         reference: () =>
           Effect.succeed({
             location: {
@@ -609,9 +610,12 @@ export function currentSession(session: { id: string } & Record<string, unknown>
     model: session.model ?? { id: "mock-model", providerID: "mock-provider" },
     cost: session.cost ?? 0,
     tokens: session.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    ...(typeof session.outcome === "string" ? { outcome: session.outcome } : {}),
     time: {
       created: "created" in time && typeof time.created === "number" ? time.created : 0,
       updated: "updated" in time && typeof time.updated === "number" ? time.updated : 0,
+      ...("idle" in time && typeof time.idle === "number" ? { idle: time.idle } : {}),
+      ...("viewed" in time && typeof time.viewed === "number" ? { viewed: time.viewed } : {}),
       ...(session.time && typeof session.time === "object" && "archived" in session.time
         ? { archived: session.time.archived }
         : {}),

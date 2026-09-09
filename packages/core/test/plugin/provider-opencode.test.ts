@@ -1,18 +1,22 @@
 import { describe, expect } from "bun:test"
-import { LLM } from "@opencode-ai/ai"
-import { LLMClient, RequestExecutor } from "@opencode-ai/ai/route"
-import { Money } from "@opencode-ai/schema/money"
+import { LLM } from "@opencode/ai"
+import { LLMClient, RequestExecutor } from "@opencode/ai/route"
+import { Money } from "@opencode/schema/money"
 import { Effect, Layer, Stream } from "effect"
-import { Catalog } from "@opencode-ai/core/catalog"
-import { Credential } from "@opencode-ai/core/credential"
-import { Integration } from "@opencode-ai/core/integration"
-import { Model } from "@opencode-ai/core/model"
-import { ModelResolver } from "@opencode-ai/core/model-resolver"
-import { Plugin } from "@opencode-ai/core/plugin"
-import { PluginHost } from "@opencode-ai/core/plugin/host"
-import { OpencodePlugin } from "@opencode-ai/core/plugin/provider/opencode"
-import { Provider } from "@opencode-ai/core/provider"
+import { TestClock } from "effect/testing"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { Catalog } from "@opencode/core/catalog"
+import { Credential } from "@opencode/core/credential"
+import { Integration } from "@opencode/core/integration"
+import { Model } from "@opencode/core/model"
+import { ModelResolver } from "@opencode/core/model-resolver"
+import { Plugin } from "@opencode/core/plugin"
+import { PluginHost } from "@opencode/core/plugin/host"
+import { OpencodePlugin } from "@opencode/core/plugin/provider/opencode"
+import { Provider } from "@opencode/core/provider"
+import { WebSearch } from "@opencode/core/websearch"
 import { withEnv } from "../fixture/env"
+import { drain } from "../lib/clock"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "./fixture"
 
@@ -267,12 +271,12 @@ describe("OpencodePlugin", () => {
           const credentials = yield* Credential.Service
           const catalog = yield* Catalog.Service
           const integrations = yield* Integration.Service
-          yield* catalog.transform((draft) => {
-            draft.provider.update(Provider.ID.openai, (provider) => {
+          yield* catalog.transform((editor) => {
+            editor.provider.update(Provider.ID.openai, (provider) => {
               provider.package = Provider.aisdk("@ai-sdk/openai")
               provider.integrationID = Integration.ID.make("openai")
             })
-            draft.model.update(Provider.ID.openai, Model.ID.make("api-model"), (model) => {
+            editor.model.update(Provider.ID.openai, Model.ID.make("api-model"), (model) => {
               model.package = Provider.aisdk("@ai-sdk/openai")
               model.settings = { baseURL: "https://upstream.example/v1" }
               model.variants = [
@@ -284,7 +288,7 @@ describe("OpencodePlugin", () => {
                 },
               ]
             })
-            draft.model.update(Provider.ID.make("remote"), Model.ID.make("stale"), () => {})
+            editor.model.update(Provider.ID.make("remote"), Model.ID.make("stale"), () => {})
           })
           const initial = yield* credentials.create({
             integrationID: Integration.ID.make("opencode"),
@@ -379,40 +383,426 @@ describe("OpencodePlugin", () => {
     ),
   )
 
-  it.live("normalizes legacy Console OpenAI variant bodies without changing native bodies", () =>
+  it.effect("refreshes hosted search with Console config and skips unchanged snapshots", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const state = { advertised: false, requests: 0 }
+        const server = Bun.serve({
+          port: 0,
+          fetch: () => {
+            state.requests++
+            return Response.json({
+              providers: {},
+              ...(state.advertised ? { websearch: { providerID: "opencode" } } : {}),
+            })
+          },
+        })
+        return { server, state }
+      }),
+      ({ server, state }) =>
+        Effect.gen(function* () {
+          const credentials = yield* Credential.Service
+          const catalog = yield* Catalog.Service
+          const websearch = yield* WebSearch.Service
+          const rebuilds = { catalog: 0, websearch: 0 }
+          yield* credentials.create({
+            integrationID: Integration.ID.make("opencode"),
+            value: Credential.Key.make({ type: "key", key: "secret", metadata: { server: server.url.origin } }),
+          })
+          yield* catalog.transform(() => {
+            rebuilds.catalog++
+          })
+          yield* websearch.transform(() => {
+            rebuilds.websearch++
+          })
+          yield* addPlugin()
+          yield* drain
+          const initial = { ...rebuilds }
+          expect(state.requests).toBe(1)
+          expect(yield* websearch.default()).toBeUndefined()
+
+          state.advertised = true
+          yield* TestClock.adjust("9 minutes")
+          yield* drain
+          expect(state.requests).toBe(1)
+          expect(rebuilds).toEqual(initial)
+          expect(yield* websearch.default()).toBeUndefined()
+
+          yield* TestClock.adjust("1 minute")
+          yield* drain
+          expect(state.requests).toBe(2)
+          expect(rebuilds).toEqual({ catalog: initial.catalog + 1, websearch: initial.websearch + 1 })
+          expect(yield* websearch.default()).toEqual({ id: WebSearch.ID.make("opencode"), name: "OpenCode Web Search" })
+
+          yield* TestClock.adjust("10 minutes")
+          yield* drain
+          expect(state.requests).toBe(3)
+          expect(rebuilds).toEqual({ catalog: initial.catalog + 1, websearch: initial.websearch + 1 })
+          expect(yield* websearch.default()).toEqual({ id: WebSearch.ID.make("opencode"), name: "OpenCode Web Search" })
+
+          state.advertised = false
+          yield* TestClock.adjust("10 minutes")
+          yield* drain
+          expect(state.requests).toBe(4)
+          expect(rebuilds).toEqual({ catalog: initial.catalog + 2, websearch: initial.websearch + 2 })
+          expect(yield* websearch.providers()).toEqual([])
+          expect(yield* websearch.default()).toBeUndefined()
+        }),
+      ({ server }) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+
+  it.live("loads and executes hosted web search from the connected OpenCode server", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const requests: Array<{
+          method: string
+          path: string
+          authorization: string | null
+          orgID: string | null
+          body?: unknown
+        }> = []
+        const gate = Promise.withResolvers<void>()
+        const state = { advertised: true, providerID: "opencode", waitForConfig: false }
+        const server = Bun.serve({
+          port: 0,
+          fetch: async (request) => {
+            const path = new URL(request.url).pathname
+            const body = request.method === "POST" ? await request.json() : undefined
+            requests.push({
+              method: request.method,
+              path,
+              authorization: request.headers.get("authorization"),
+              orgID: request.headers.get("x-org-id"),
+              ...(body === undefined ? {} : { body }),
+            })
+            if (path === "/api/v2/config") {
+              if (state.waitForConfig) await gate.promise
+              return Response.json({
+                providers: {},
+                ...(state.advertised
+                  ? {
+                      websearch: {
+                        providerID: "opencode",
+                      },
+                    }
+                  : {}),
+              })
+            }
+            if (path === "/api/websearch" || path === "/other/api/websearch") {
+              return Response.json({
+                providerID: state.providerID,
+                results: [
+                  {
+                    url: "https://github.com/anomalyco/opencode",
+                    title: "OpenCode",
+                    content: "Open source AI coding agent.",
+                    time: { published: 1_700_000_000_000 },
+                  },
+                ],
+              })
+            }
+            return new Response("Not found", { status: 404 })
+          },
+        })
+        return { gate, requests, server, state }
+      }),
+      ({ gate, requests, server, state }) =>
+        Effect.gen(function* () {
+          const credentials = yield* Credential.Service
+          const websearch = yield* WebSearch.Service
+          const account = (access: string, serverURL = server.url.origin, orgID = "org_test") =>
+            Credential.OAuth.make({
+              type: "oauth",
+              methodID: Integration.MethodID.make("device"),
+              access,
+              refresh: "refresh",
+              expires: Date.now() + 600_000,
+              metadata: { server: serverURL, orgID },
+            })
+          const initial = yield* credentials.create({
+            integrationID: Integration.ID.make("opencode"),
+            value: account("secret"),
+          })
+
+          yield* addPlugin()
+          expect(yield* websearch.providers()).toContainEqual({
+            id: WebSearch.ID.make("opencode"),
+            name: "OpenCode Web Search",
+          })
+          expect(yield* websearch.default()).toEqual({ id: WebSearch.ID.make("opencode"), name: "OpenCode Web Search" })
+          expect(yield* websearch.query({ query: "effect web search" })).toEqual(
+            new WebSearch.Response({
+              providerID: WebSearch.ID.make("opencode"),
+              results: [
+                {
+                  url: "https://github.com/anomalyco/opencode",
+                  title: "OpenCode",
+                  content: "Open source AI coding agent.",
+                  time: { published: 1_700_000_000_000 },
+                },
+              ],
+            }),
+          )
+          expect(requests).toEqual([
+            {
+              method: "GET",
+              path: "/api/v2/config",
+              authorization: "Bearer secret",
+              orgID: "org_test",
+            },
+            {
+              method: "POST",
+              path: "/api/websearch",
+              authorization: "Bearer secret",
+              orgID: "org_test",
+              body: { query: "effect web search", providerID: "opencode" },
+            },
+          ])
+
+          yield* credentials.update(initial.id, {
+            value: account("replacement"),
+          })
+          yield* websearch.query({ query: "fresh credential" })
+          expect(requests.at(-1)).toMatchObject({
+            method: "POST",
+            authorization: "Bearer replacement",
+            body: { query: "fresh credential", providerID: "opencode" },
+          })
+
+          yield* credentials.update(initial.id, {
+            value: account("moved", `${server.url.origin}/other///?ignored=true#ignored`),
+          })
+          yield* websearch.query({ query: "updated server" })
+          expect(requests.at(-1)).toMatchObject({
+            method: "POST",
+            path: "/other/api/websearch",
+            authorization: "Bearer moved",
+            orgID: "org_test",
+            body: { query: "updated server", providerID: "opencode" },
+          })
+          yield* credentials.update(initial.id, {
+            value: account("replacement"),
+          })
+
+          state.providerID = "unexpected"
+          expect((yield* websearch.query({ query: "wrong provider" }).pipe(Effect.flip))._tag).toBe("WebSearch.Request")
+
+          state.advertised = false
+          state.waitForConfig = true
+          const searchCount = requests.filter((request) => request.path === "/api/websearch").length
+          yield* credentials.create({
+            integrationID: Integration.ID.make("opencode"),
+            value: account("switched", server.url.origin, "org_switched"),
+          })
+          yield* eventually(
+            Effect.sync(() => requests),
+            (requests) => requests.some((request) => request.authorization === "Bearer switched"),
+          )
+          expect((yield* websearch.query({ query: "switch race" }).pipe(Effect.flip))._tag).toBe("WebSearch.Request")
+          expect(requests.filter((request) => request.path === "/api/websearch")).toHaveLength(searchCount)
+          gate.resolve()
+          yield* eventually(websearch.providers(), (providers) =>
+            providers.every((provider) => provider.id !== WebSearch.ID.make("opencode")),
+          )
+          expect(yield* websearch.default()).toBeUndefined()
+          expect(requests.at(-1)).toMatchObject({
+            method: "GET",
+            path: "/api/v2/config",
+            authorization: "Bearer switched",
+            orgID: "org_switched",
+          })
+        }),
+      ({ gate, server }) =>
+        Effect.sync(() => gate.resolve()).pipe(Effect.andThen(Effect.promise(() => server.stop(true)))),
+    ),
+  )
+
+  it.live("derives hosted search identity and the default Console endpoint locally", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() =>
+        Bun.serve({
+          port: 0,
+          fetch: (request) => {
+            if (new URL(request.url).pathname === "/console/api/v2/config") {
+              return Response.json({
+                providers: {},
+                websearch: {
+                  providerID: "managed-search",
+                  name: "Remote name",
+                  url: "https://example.invalid/search",
+                },
+              })
+            }
+            return Response.json({ providerID: "managed-search", results: [] })
+          },
+        }),
+      ),
+      (server) =>
+        Effect.gen(function* () {
+          const credentials = yield* Credential.Service
+          const websearch = yield* WebSearch.Service
+          const http = yield* HttpClient.HttpClient
+          const requests: string[] = []
+          yield* credentials.create({
+            integrationID: Integration.ID.make("opencode"),
+            value: Credential.Key.make({ type: "key", key: "secret" }),
+          })
+          yield* addPlugin().pipe(
+            Effect.provideService(
+              HttpClient.HttpClient,
+              http.pipe(
+                HttpClient.mapRequest((request) => {
+                  requests.push(request.url)
+                  return HttpClientRequest.setUrl(request, `${server.url.origin}${new URL(request.url).pathname}`)
+                }),
+              ),
+            ),
+          )
+
+          expect(yield* websearch.default()).toEqual({
+            id: WebSearch.ID.make("managed-search"),
+            name: "OpenCode Web Search",
+          })
+          expect(yield* websearch.query({ query: "default Console" })).toEqual(
+            new WebSearch.Response({ providerID: WebSearch.ID.make("managed-search"), results: [] }),
+          )
+          expect(requests).toEqual([
+            "https://opencode.ai/console/api/v2/config",
+            "https://opencode.ai/console/api/websearch",
+          ])
+        }),
+      (server) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+
+  it.live("does not forward hosted search credentials through redirects", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const requests: string[] = []
+        const state = { crossOrigin: false }
+        const server = Bun.serve({
+          port: 0,
+          fetch: (request) => {
+            const url = new URL(request.url)
+            requests.push(url.pathname)
+            if (url.pathname === "/console/api/v2/config") {
+              return Response.json({
+                providers: {},
+                websearch: {
+                  providerID: "opencode",
+                },
+              })
+            }
+            if (url.pathname === "/console/api/websearch") {
+              if (state.crossOrigin) url.hostname = "127.0.0.1"
+              return Response.redirect(`${url.origin}/outside-console`, 307)
+            }
+            return Response.json({ providerID: "opencode", results: [] })
+          },
+        })
+        return { requests, server, state }
+      }),
+      ({ requests, server, state }) =>
+        Effect.gen(function* () {
+          const credentials = yield* Credential.Service
+          const websearch = yield* WebSearch.Service
+          yield* credentials.create({
+            integrationID: Integration.ID.make("opencode"),
+            value: Credential.Key.make({
+              type: "key",
+              key: "secret",
+              metadata: { server: `${server.url.origin}/console`, orgID: "org_test" },
+            }),
+          })
+          yield* addPlugin()
+
+          expect((yield* websearch.query({ query: "private search" }).pipe(Effect.flip))._tag).toBe("WebSearch.Request")
+          expect(requests).toEqual(["/console/api/v2/config", "/console/api/websearch"])
+
+          state.crossOrigin = true
+          expect((yield* websearch.query({ query: "private search" }).pipe(Effect.flip))._tag).toBe("WebSearch.Request")
+          expect(requests).toEqual(["/console/api/v2/config", "/console/api/websearch", "/console/api/websearch"])
+        }),
+      ({ server }) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+
+  it.live("closes a rejected hosted search response without waiting for its body", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const state = { cancelled: false }
+        const server = Bun.serve({
+          port: 0,
+          fetch: (request) => {
+            const url = new URL(request.url)
+            if (url.pathname === "/api/v2/config") {
+              return Response.json({
+                providers: {},
+                websearch: {
+                  providerID: "opencode",
+                },
+              })
+            }
+            return new Response(
+              new ReadableStream({
+                start(controller) {
+                  controller.enqueue(new TextEncoder().encode("temporarily unavailable"))
+                },
+                cancel() {
+                  state.cancelled = true
+                },
+              }),
+              { status: 503 },
+            )
+          },
+        })
+        return { server, state }
+      }),
+      ({ server, state }) =>
+        Effect.gen(function* () {
+          const credentials = yield* Credential.Service
+          const websearch = yield* WebSearch.Service
+          yield* credentials.create({
+            integrationID: Integration.ID.make("opencode"),
+            value: Credential.Key.make({
+              type: "key",
+              key: "secret",
+              metadata: { server: server.url.origin, orgID: "org_test" },
+            }),
+          })
+          yield* addPlugin()
+
+          const error = yield* websearch.query({ query: "rejected search" }).pipe(Effect.flip)
+          expect(error._tag).toBe("WebSearch.Request")
+          yield* eventually(
+            Effect.sync(() => state.cancelled),
+            (cancelled) => cancelled,
+          )
+          // Callers can retain errors, so response cleanup must not depend on garbage collection.
+          expect(error).toBeInstanceOf(WebSearch.RequestError)
+        }),
+      ({ server }) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+
+  it.live("preserves native Console OpenAI variant bodies in inference requests", () =>
     Effect.acquireUseRelease(
       Effect.sync(() => {
         const variants = [
           {
-            id: "legacy",
-            body: { reasoningEffort: "high", reasoningSummary: "auto" },
-            expected: { reasoning: { effort: "high", summary: "auto" } },
-          },
-          {
             id: "effort-only",
-            body: { reasoningEffort: "low" },
-            expected: { reasoning: { effort: "low" } },
+            body: { reasoning: { effort: "low" } },
           },
           {
             id: "summary-only",
-            body: { reasoningSummary: "detailed" },
-            expected: { reasoning: { summary: "detailed" } },
+            body: { reasoning: { summary: "detailed" } },
           },
           {
             id: "native",
             body: { reasoning: { effort: "high", summary: "auto" } },
-            expected: { reasoning: { effort: "high", summary: "auto" } },
           },
-          {
-            id: "mixed",
-            body: {
-              reasoningEffort: "low",
-              reasoningSummary: "auto",
-              reasoning: { effort: "high", summary: "detailed" },
-            },
-            expected: { reasoning: { effort: "high", summary: "detailed" } },
-          },
-          { id: "plain", body: {}, expected: {} },
+          { id: "plain", body: {} },
         ]
         const models = {
           astra: {
@@ -480,7 +870,7 @@ describe("OpencodePlugin", () => {
             Effect.gen(function* () {
               const projected = required(model.variants.find((item) => item.id === variant.id))
               expect(projected.body).toEqual({
-                ...variant.expected,
+                ...variant.body,
                 include: ["reasoning.encrypted_content"],
                 metadata: { custom: "unchanged" },
               })
@@ -494,7 +884,7 @@ describe("OpencodePlugin", () => {
               const request = required(requests.at(-1))
               expect(request.variant).toBe(variant.id)
               expect(request.body).toMatchObject({
-                ...variant.expected,
+                ...variant.body,
                 model: "api-astra",
                 include: ["reasoning.encrypted_content"],
                 metadata: { custom: "unchanged" },
@@ -507,9 +897,8 @@ describe("OpencodePlugin", () => {
           const compatible = required(yield* catalog.model.get(Provider.ID.make("compatible"), Model.ID.make("astra")))
           const override = required(yield* catalog.model.get(Provider.ID.make("remote"), Model.ID.make("override")))
           for (const model of [compatible, override]) {
-            expect(model.variants.find((variant) => variant.id === "legacy")?.body).toEqual({
-              reasoningEffort: "high",
-              reasoningSummary: "auto",
+            expect(model.variants.find((variant) => variant.id === "native")?.body).toEqual({
+              reasoning: { effort: "high", summary: "auto" },
               include: ["reasoning.encrypted_content"],
               metadata: { custom: "unchanged" },
             })
@@ -608,7 +997,16 @@ describe("OpencodePlugin", () => {
             draft.cost = cost(1)
           })
         })
-        yield* addPlugin()
+        // An env credential has no server metadata, so the plugin would ask the
+        // default Console for remote config; answer 404 (no remote config) locally.
+        yield* addPlugin().pipe(
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 404 }))),
+            ),
+          ),
+        )
         expect(required(yield* catalog.provider.get(Provider.ID.opencode)).settings?.apiKey).toBeUndefined()
         expect(required(yield* catalog.model.get(Provider.ID.opencode, Model.ID.make("paid"))).enabled).toBe(true)
       }),
