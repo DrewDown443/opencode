@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
 import { CodeMode, Tool } from "../src/index.js"
-import { supportedSyntaxMessage } from "../src/interpreter/model.js"
 
 // `new` is supported syntax; only the callee decides whether construction succeeds. A callee without
 // construction support is a TypeError naming it, like JS, rather than an unsupported-syntax diagnostic
@@ -70,7 +69,7 @@ describe("new on a non-constructible callee", () => {
   test("classes remain unsupported syntax", async () => {
     const failure = await error(`class A {}; return new A()`)
     expect(failure.kind).toBe("UnsupportedSyntax")
-    expect(failure.message).toContain("Classes, this, getters/setters, tagged templates, BigInt, and arbitrary Symbols")
+    expect(failure.message).toStartWith("Syntax 'ClassDeclaration' is not supported.")
   })
 })
 
@@ -101,12 +100,5 @@ describe("supported constructor list", () => {
         name === "Promise" ? "() => {}" : name === "AggregateError" ? "[]" : name === "URL" ? '"https://a.b/"' : ""
       expect(await value(`return typeof new ${name}(${argument})`)).toBe("object")
     }
-  })
-
-  test("the unsupported-syntax summary names the same constructors", async () => {
-    const constructors = await supportedConstructors()
-    const named = constructors.filter((name) => !name.endsWith("Error"))
-    expect(supportedSyntaxMessage).toContain(`new for ${named.join(", ")}, and the Error types`)
-    expect(constructors.filter((name) => name.endsWith("Error")).length).toBeGreaterThan(0)
   })
 })

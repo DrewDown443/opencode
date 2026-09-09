@@ -88,10 +88,6 @@ export class GeneratorReturn {
 
 export const OptionalShortCircuit: unique symbol = Symbol("codemode.optional-short-circuit")
 
-// Keep this summary in sync with interpreter-support.md; test/new-expression.test.ts pins the constructor list.
-export const supportedSyntaxMessage =
-  "Supported syntax: tools.* calls (they return promises - resolve them with await), data literals, destructuring, optional chaining, template literals, conditionals, switch, loops (for, while, do...while, for...of, for await...of, and for...in over object/array/tools keys), labeled break/continue, function declarations, function expressions, arrow functions, async functions, generators, spread, try/catch/finally, and new for Object, Array, Promise, Date, RegExp, Map, Set, URL, URLSearchParams, and the Error types. Built-ins: Array, String, Number, Object, Math, JSON, Date, RegExp, Map, Set, URL, and URLSearchParams methods, URI encoding helpers, captured console.log/info/debug/warn/error/dir/table, Promise.all/allSettled/race/any/resolve/reject over collections mixing promises and plain values for parallel tool calls, and promise chaining with .then/.catch/.finally. Classes, this, getters/setters, tagged templates, BigInt, and arbitrary Symbols are not supported."
-
 export class InterpreterRuntimeError extends Error {
   readonly node?: AstNode
   errorName = "Error"
@@ -114,12 +110,7 @@ export class InterpreterRuntimeError extends Error {
 }
 
 export const unsupportedSyntax = (kind: string, node: AstNode): InterpreterRuntimeError =>
-  new InterpreterRuntimeError(
-    `Syntax '${kind}' is not supported. ${supportedSyntaxMessage}`,
-    node,
-    "UnsupportedSyntax",
-    [supportedSyntaxMessage],
-  )
+  new InterpreterRuntimeError(`Syntax '${kind}' is not supported.`, node, "UnsupportedSyntax")
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
