@@ -49,8 +49,8 @@ const serverTabs = [
 ] as const
 
 const trailingTabs = [
-  [{ value: "experimental", icon: "flask", label: "settings.tab.experimental" }],
-  [{ value: "about", icon: "info", label: "settings.tab.about" }],
+  { value: "experimental", icon: "flask", label: "settings.tab.experimental" },
+  { value: "about", icon: "info", label: "settings.tab.about" },
 ] as const
 
 const nestedServerTabs = [
@@ -203,7 +203,7 @@ function RootSettings() {
             ],
           },
         ]),
-    ...trailingTabs.map((items) => ({ items: items.map((item) => ({ ...item, label: language.t(item.label) })) })),
+    { items: trailingTabs.map((item) => ({ ...item, label: language.t(item.label) })) },
   ])
 
   createEffect(() => {
