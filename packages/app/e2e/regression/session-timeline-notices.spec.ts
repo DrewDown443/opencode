@@ -104,15 +104,15 @@ test("shows the compaction lifecycle while the summary streams and after complet
   )
 
   const compaction = page.locator('[data-component="session-compaction-message"]')
-  await expect(compaction.getByText("Session compacting started", { exact: true })).toBeVisible()
-  await expect(compaction.getByRole("status").getByLabel("Compacting session", { exact: true })).toBeVisible()
+  await expect(compaction.getByText("Session compaction started", { exact: true })).toBeVisible()
+  await expect(compaction.getByRole("status").getByLabel("Compacting", { exact: true })).toBeVisible()
   await expect(compaction.locator('[data-component="text-shimmer"]')).toHaveAttribute("data-active", "true")
   await expect(compaction.getByText("Session compacted", { exact: true })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible()
   await expect(page.locator('[data-component="session-working"]')).toHaveCount(0)
 
   await page.setViewportSize({ width: 480, height: 900 })
-  await expect(compaction.getByText("Session compacting started", { exact: true })).toBeInViewport()
+  await expect(compaction.getByText("Session compaction started", { exact: true })).toBeInViewport()
 
   await timeline.send(
     compactionDelta({
@@ -122,7 +122,7 @@ test("shows the compaction lifecycle while the summary streams and after complet
   )
   await expect(compaction.getByRole("heading", { name: "Checkpoint" })).toBeVisible()
   await expect(compaction).toContainText("Streamed implementation details.")
-  await expect(compaction.getByRole("status").getByLabel("Compacting session", { exact: true })).toBeVisible()
+  await expect(compaction.getByRole("status").getByLabel("Compacting", { exact: true })).toBeVisible()
   await expect(compaction.getByText("Session compacted", { exact: true })).toHaveCount(0)
 
   await timeline.send(
@@ -135,7 +135,7 @@ test("shows the compaction lifecycle while the summary streams and after complet
   )
   await expect(compaction).toContainText("Final implementation details.")
   await expect(compaction).not.toContainText("Streamed implementation details.")
-  await expect(compaction.getByText("Session compacting started", { exact: true })).toBeVisible()
+  await expect(compaction.getByText("Session compaction started", { exact: true })).toBeVisible()
   await expect(compaction.getByText("Session compacted", { exact: true })).toBeVisible()
   await expect(compaction.getByRole("status")).toHaveCount(0)
   await expect(compaction.locator('[data-component="text-shimmer"]')).toHaveCount(0)
@@ -162,7 +162,7 @@ test("updates running compactions to failed and cancelled boundaries", async ({ 
 
   const compactions = page.locator('[data-component="session-compaction-message"]')
   const failed = compactions.filter({ hasText: "The provider rejected the summary." })
-  await expect(failed.getByText("Session compacting started", { exact: true })).toBeVisible()
+  await expect(failed.getByText("Session compaction started", { exact: true })).toBeVisible()
   await expect(failed.getByText("Session compaction failed", { exact: true })).toBeVisible()
   await expect(failed.getByText("Session compacted", { exact: true })).toHaveCount(0)
   await expect(failed.getByRole("status")).toHaveCount(0)
@@ -183,7 +183,7 @@ test("updates running compactions to failed and cancelled boundaries", async ({ 
 
   await expect(compactions).toHaveCount(2)
   const cancelled = compactions.filter({ hasNotText: "The provider rejected the summary." })
-  await expect(cancelled.getByText("Session compacting started", { exact: true })).toBeVisible()
+  await expect(cancelled.getByText("Session compaction started", { exact: true })).toBeVisible()
   await expect(cancelled.getByText("Session compaction cancelled", { exact: true })).toBeVisible()
   await expect(cancelled.getByText("Session compacted", { exact: true })).toHaveCount(0)
   await expect(cancelled.getByRole("status")).toHaveCount(0)
@@ -199,7 +199,7 @@ test("shows an interrupted outcome when stopping automatic compaction", async ({
   await timeline.send(compactionStarted({ sessionID, reason: "auto", recent: "" }))
   await timeline.send(compactionDelta({ sessionID, text: "Partial automatic summary." }))
   const compaction = page.locator('[data-component="session-compaction-message"]')
-  await expect(compaction.getByRole("status").getByLabel("Compacting session", { exact: true })).toBeVisible()
+  await expect(compaction.getByRole("status").getByLabel("Compacting", { exact: true })).toBeVisible()
   await expect(compaction).toContainText("Partial automatic summary.")
 
   const request = page.waitForRequest(
@@ -216,7 +216,7 @@ test("shows an interrupted outcome when stopping automatic compaction", async ({
     }),
   )
 
-  await expect(compaction.getByText("Session compacting started", { exact: true })).toBeVisible()
+  await expect(compaction.getByText("Session compaction started", { exact: true })).toBeVisible()
   await expect(compaction.getByText("Session compaction interrupted", { exact: true })).toBeVisible()
   await expect(compaction.getByText("Session compaction failed", { exact: true })).toHaveCount(0)
   await expect(compaction.getByText("Session compacted", { exact: true })).toHaveCount(0)
