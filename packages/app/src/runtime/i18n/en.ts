@@ -1385,6 +1385,7 @@ export const dict = {
   "session.summary.title": "Session details",
   "session.summary.noBranch": "No branch",
   "session.summary.basedOn": "Based on {{branch}}",
+  "mcp.auth.interactiveForm": "MCP server {{name}} requires an interactive authentication form",
   "workspace.type.local": "local",
   "workspace.type.sandbox": "sandbox",
   "workspace.create.failed.title": "Failed to create worktree",
