@@ -30,7 +30,6 @@ import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { AgentPlugin } from "./agent"
 import { CommandPlugin } from "./command"
 import { ModelsDevPlugin } from "./models-dev"
-import { ProviderPlugins } from "./provider"
 import { SkillPlugin } from "./skill"
 import { VariantPlugin } from "./variant"
 
@@ -62,6 +61,8 @@ export function define<R>(plugin: Plugin<R>) {
 
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
+    // Provider plugins import define from this module, so load their registry after module initialization.
+    const { ProviderPlugins } = yield* Effect.promise(() => import("./provider"))
     const catalog = yield* Catalog.Service
     const commands = yield* CommandV2.Service
     const plugin = yield* PluginV2.Service
