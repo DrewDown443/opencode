@@ -1,19 +1,17 @@
 import { createPromptProjectController } from "@/new-session/project/selector"
 import { useSettingsDialog } from "@/settings/command"
-import { useSettings } from "@/settings/model"
 import { useTabs, type DraftTab } from "@/shell/tabs/tabs"
 import { useSearchParams } from "@solidjs/router"
 import { createEffect, createMemo, createResource, untrack } from "solid-js"
 import { createComposerModel } from "@/composer/model"
 import { useComposerCommands } from "@/composer/commands"
 import { createNewSessionComposerAdapter } from "./composer-adapter"
-import { NewSessionStatus, NewSessionView } from "./view"
+import { NewSessionView } from "./view"
 import { createNewSessionWorkspaceController } from "./workspace/controller"
 import { useNewSessionCommands } from "./commands"
 
 /** The draft-only Session page. Submitting promotes the draft into a real Session. */
 export default function NewSessionPage(props: { draftId: string }) {
-  const settings = useSettings()
   const [search, setSearch] = useSearchParams<{ draftId?: string; prompt?: string }>()
   const tabs = useTabs()
   const openWorkspaces = useSettingsDialog("workspaces")
@@ -72,7 +70,6 @@ export default function NewSessionPage(props: { draftId: string }) {
   return (
     <div class="relative size-full overflow-hidden flex flex-col">
       {suspendUntilPromptReady()}
-      <NewSessionStatus visible={settings.visibility.status()} />
       <div class="flex-1 min-h-0 flex flex-col gap-2 px-2 pb-[var(--shell-bottom-inset,8px)] pt-[var(--shell-top-inset,8px)]">
         <NewSessionView composer={model} project={project} workspace={workspace} />
       </div>

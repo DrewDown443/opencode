@@ -13,8 +13,6 @@ import {
   PromptProjectSelector,
   type PromptProjectController,
 } from "@/new-session/project/selector"
-import { StatusPopover } from "@/shell/status/status-popover"
-import { TitlebarRight } from "@/shell/titlebar/right-slot"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useWorkspaceLocation } from "@/workspaces/location"
 import { useProviders } from "@/providers/catalog/providers"
@@ -112,19 +110,6 @@ export function NewSessionView(props: {
         />
       </div>
     </div>
-  )
-}
-
-export function NewSessionStatus(props: { visible: boolean }) {
-  const language = useLanguage()
-  return (
-    <TitlebarRight>
-      <Show when={props.visible}>
-        <Tooltip appearance="standard" placement="bottom" value={language.t("status.popover.trigger")}>
-          <StatusPopover />
-        </Tooltip>
-      </Show>
-    </TitlebarRight>
   )
 }
 
