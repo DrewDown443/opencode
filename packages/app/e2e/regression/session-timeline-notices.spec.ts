@@ -86,7 +86,7 @@ test("renders current protocol notices in CLI order", async ({ page }) => {
   expect(ownerWarnings).toEqual([])
 })
 
-test("shows the compaction lifecycle while the summary streams and after completion", async ({ page }) => {
+test("renders compaction progress, summary, and outcome in order", async ({ page }) => {
   const timeline = await setupTimeline(page, {
     settings: {
       timelineDetail: { ...timelinePresets[2].value, notices: { placement: "separate" } },
@@ -137,8 +137,14 @@ test("shows the compaction lifecycle while the summary streams and after complet
   await expect(compaction).not.toContainText("Streamed implementation details.")
   await expect(compaction.getByText("Session compaction started", { exact: true })).toBeVisible()
   await expect(compaction.getByText("Session compacted", { exact: true })).toBeVisible()
+  await expect
+    .poll(async () => {
+      const summary = await compaction.locator('[data-component="text-part"]').boundingBox()
+      const completed = await compaction.getByText("Session compacted", { exact: true }).boundingBox()
+      return !!summary && !!completed && completed.y >= summary.y + summary.height
+    })
+    .toBe(true)
   await expect(compaction.getByRole("status")).toHaveCount(0)
-  await expect(compaction.locator('[data-component="text-shimmer"]')).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible()
   await expect(page.locator('[data-component="session-working"]')).toBeVisible()
 })

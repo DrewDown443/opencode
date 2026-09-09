@@ -392,12 +392,8 @@ export function SessionCompactionMessage(props: { message: SessionMessageCompact
   const i18n = useI18n()
   const summary = () => (props.message.status === "failed" ? "" : props.message.summary)
   const error = () => {
-    if (
-      props.message.status !== "failed" ||
-      props.message.error.type === "aborted" ||
-      props.message.error.type === "compaction.interrupted"
-    )
-      return ""
+    if (props.message.status !== "failed") return ""
+    if (props.message.error.type === "aborted" || props.message.error.type === "compaction.interrupted") return ""
     return props.error
   }
   const compact = createMemo(
@@ -415,7 +411,7 @@ export function SessionCompactionMessage(props: { message: SessionMessageCompact
       output: compact().format(output),
     })
   }
-  const outcome = createMemo(() => {
+  const outcome = () => {
     if (props.message.status !== "failed")
       return props.message.status === "completed" && props.message.providerContext
         ? "ui.messagePart.providerCompaction"
@@ -423,7 +419,7 @@ export function SessionCompactionMessage(props: { message: SessionMessageCompact
     if (props.message.error.type === "aborted") return "ui.messagePart.compaction.cancelled"
     if (props.message.error.type === "compaction.interrupted") return "ui.messagePart.compaction.interrupted"
     return "ui.messagePart.compaction.failed"
-  })
+  }
   const label = createMemo(() => [i18n.t(outcome()), usage()].filter(Boolean).join(" · "))
 
   return (
@@ -431,14 +427,7 @@ export function SessionCompactionMessage(props: { message: SessionMessageCompact
       <div class="py-2">
         <TimelineSeparator label={i18n.t("ui.messagePart.compaction.started")} />
       </div>
-      <Show
-        when={props.message.status === "running"}
-        fallback={
-          <div class="py-2">
-            <TimelineSeparator label={label()} />
-          </div>
-        }
-      >
+      <Show when={props.message.status === "running"}>
         <div role="status" class="py-2">
           <BasicTool
             icon="archive"
@@ -458,6 +447,11 @@ export function SessionCompactionMessage(props: { message: SessionMessageCompact
               streaming={props.message.status === "running"}
             />
           </div>
+        </div>
+      </Show>
+      <Show when={props.message.status !== "running"}>
+        <div class="py-2">
+          <TimelineSeparator label={label()} />
         </div>
       </Show>
       <Show when={error()}>
