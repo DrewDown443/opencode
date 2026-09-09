@@ -26,6 +26,12 @@ for (const layout of ["horizontal", "vertical"] as const) {
     const server = summary.getByRole("button", { name: "Server", exact: true })
     await expect(project).toHaveAttribute("aria-expanded", "true")
     await expect(server).toHaveAttribute("aria-expanded", "true")
+    for (const heading of [project, server]) {
+      await expect(heading).toHaveCSS("column-gap", "8px")
+      await expect(heading.locator(".session-summary-heading-label")).toHaveCSS("column-gap", "4px")
+      await expect(heading.locator(".session-summary-disclosure")).toHaveAttribute("width", "16")
+      await expect(heading.locator(".session-summary-disclosure")).toHaveAttribute("height", "16")
+    }
     await expect(summary.getByRole("button", { name: "MCP", exact: true })).toBeVisible()
     await testInfo.attach(`summary-${layout}`, { body: await page.screenshot(), contentType: "image/png" })
     await project.click()
@@ -70,6 +76,10 @@ for (const direction of ["ltr", "rtl"] as const) {
       await expect(page.locator("html")).toHaveAttribute("dir", "rtl")
       await page.getByRole("button", { name: "Toggle debug tools", exact: true }).click()
     }
+    const warnings: string[] = []
+    page.on("console", (event) => {
+      if (event.text().includes("computations created outside")) warnings.push(event.text())
+    })
     await page.getByRole("button", { name: "Session details", exact: true }).click()
     const summary = page.getByRole("dialog", { name: "Session details", exact: true })
     const mcp = summary.getByRole("button", { name: "MCP", exact: true })
@@ -127,6 +137,7 @@ for (const direction of ["ltr", "rtl"] as const) {
         .toBeLessThanOrEqual(1)
       await page.keyboard.press("Escape")
     }
+    expect(warnings).toEqual([])
   })
 }
 
