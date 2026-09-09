@@ -85,7 +85,6 @@ import { PlanPlugin } from "./plan.js"
 import { ModelsDevPlugin } from "./models-dev.js"
 import { McpCodeModeExclusionPlugin } from "./mcp-codemode-exclusion.js"
 import { ProviderPlugins } from "./provider.js"
-import { AmazonBedrockModelsPlugin } from "./provider/amazon-bedrock.js"
 import { WebSearchPlugins } from "./websearch/index.js"
 import { SkillPlugin } from "./skill.js"
 import { VcsHgPlugin } from "./vcs/hg.js"
@@ -239,7 +238,6 @@ const post = [
   ConfigToolOutputPlugin.Plugin,
   ConfigSkillPlugin.Plugin,
   ConfigProviderPlugin.Plugin,
-  AmazonBedrockModelsPlugin,
   ConfigWebSearchPlugin.Plugin,
   ConfigWorktreePlugin.Plugin,
   VariantPlugin.Plugin,

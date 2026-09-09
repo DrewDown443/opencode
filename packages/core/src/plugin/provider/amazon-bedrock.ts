@@ -18,24 +18,6 @@ const isBedrock = (item: { readonly package: string }) => {
   return name.startsWith("@ai-sdk/amazon-bedrock") || name.startsWith("@opencode/ai/providers/amazon-bedrock")
 }
 
-// Runtime IDs requiring inference profiles; retained in models.dev for V1's ID rewriting.
-// Opus/Sonnet 4.6 support in-region calls in eu-west-2 and must remain available.
-export const PROFILE_ONLY_BARE_IDS = [
-  "amazon.nova-2-lite-v1:0",
-  "anthropic.claude-fable-5",
-  "anthropic.claude-fable-5-1",
-  "anthropic.claude-haiku-4-5-20251001-v1:0",
-  "anthropic.claude-opus-4-1-20250805-v1:0",
-  "anthropic.claude-opus-4-5-20251101-v1:0",
-  "anthropic.claude-opus-4-7",
-  "anthropic.claude-opus-4-8",
-  "anthropic.claude-opus-5",
-  "anthropic.claude-sonnet-4-5-20250929-v1:0",
-  "anthropic.claude-sonnet-5",
-  "deepseek.r1-v1:0",
-  "mistral.pixtral-large-2502-v1:0",
-]
-
 export const AmazonBedrockPlugin = define({
   id: "opencode.provider.amazon.bedrock",
   effect: Effect.fn(function* (ctx) {
@@ -71,25 +53,6 @@ export const AmazonBedrockPlugin = define({
           }
           delete provider.settings.endpoint
         })
-      }
-    })
-  }),
-})
-
-// Registered after provider config so filtering uses the final wire ID and package.
-export const AmazonBedrockModelsPlugin = define({
-  id: "opencode.provider.amazon.bedrock.models",
-  effect: Effect.fn(function* (ctx) {
-    yield* ctx.catalog.transform((catalog) => {
-      for (const record of catalog.provider.list()) {
-        for (const model of record.models.values()) {
-          if (!PROFILE_ONLY_BARE_IDS.includes(model.modelID ?? model.id)) continue
-          const pkg = Provider.packageName(model.package ?? record.provider.package)
-          if (pkg !== "@ai-sdk/amazon-bedrock" && pkg !== "@opencode/ai/providers/amazon-bedrock") continue
-          catalog.model.update(record.provider.id, model.id, (model) => {
-            model.enabled = false
-          })
-        }
       }
     })
   }),
