@@ -413,9 +413,13 @@ export function SessionCompactionMessage(props: { message: SessionMessageCompact
   const label = createMemo(() =>
     [
       i18n.t(
-        props.message.status === "completed" && props.message.providerContext
-          ? "ui.messagePart.providerCompaction"
-          : "ui.messagePart.compaction",
+        props.message.status === "failed"
+          ? props.message.error.type === "aborted"
+            ? "ui.messagePart.compaction.cancelled"
+            : "ui.messagePart.compaction.failed"
+          : props.message.status === "completed" && props.message.providerContext
+            ? "ui.messagePart.providerCompaction"
+            : "ui.messagePart.compaction",
       ),
       usage(),
     ]
@@ -426,8 +430,26 @@ export function SessionCompactionMessage(props: { message: SessionMessageCompact
   return (
     <div data-component="session-compaction-message">
       <div class="py-2">
-        <TimelineSeparator label={label()} />
+        <TimelineSeparator label={i18n.t("ui.messagePart.compaction.started")} />
       </div>
+      <Show
+        when={props.message.status === "running"}
+        fallback={
+          <div class="py-2">
+            <TimelineSeparator label={label()} />
+          </div>
+        }
+      >
+        <div role="status" class="py-2">
+          <BasicTool
+            icon="archive"
+            trigger={{ title: i18n.t("ui.messagePart.compaction.running") }}
+            status="running"
+            locked
+            hideDetails
+          />
+        </div>
+      </Show>
       <Show when={summary().trim()}>
         <div data-component="text-part" data-timeline-part-id={props.message.id}>
           <div data-slot="text-part-body">
