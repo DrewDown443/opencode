@@ -36,6 +36,18 @@ for (const rtl of [false, true]) {
       "true",
     )
     await expect(summary.getByRole("button", { name: "Server", exact: true })).toHaveAttribute("aria-expanded", "true")
+    await expect
+      .poll(async () => {
+        const view = await page.locator('[data-component="new-session"]').boundingBox()
+        const project = await summary.locator('[data-section="project"]').boundingBox()
+        const server = await summary.locator('[data-section="server"]').boundingBox()
+        if (!view || !project || !server) return
+        return {
+          top: project.y - view.y - 48,
+          cards: server.y - project.y - project.height,
+        }
+      })
+      .toEqual({ top: 6, cards: 8 })
     await testInfo.attach(`new-session-summary-${rtl ? "rtl" : "ltr"}`, {
       body: await page.screenshot(),
       contentType: "image/png",

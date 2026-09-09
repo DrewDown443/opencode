@@ -7,7 +7,7 @@ import { useLanguage } from "@/runtime/i18n/language"
 export function SummaryPopover(props: ParentProps<{ open: boolean; onOpenChange: (open: boolean) => void }>) {
   const language = useLanguage()
   return (
-    <Popover open={props.open} placement="bottom-end" gutter={6} overflowPadding={16} onOpenChange={props.onOpenChange}>
+    <Popover open={props.open} placement="bottom-end" gutter={2} overflowPadding={16} onOpenChange={props.onOpenChange}>
       <Popover.Anchor class="pointer-events-none absolute end-3 top-0 h-12 w-0" aria-hidden="true" />
       <Popover.Trigger
         as={IconButton}
