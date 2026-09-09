@@ -21,7 +21,7 @@ import { Keybind } from "@opencode/ui/keybind"
 import { Menu } from "@opencode/ui/menu"
 import { TextShimmer } from "@opencode/ui/text-shimmer"
 import { ProjectAvatar } from "@opencode/ui/project-avatar"
-import { Popover } from "@kobalte/core/popover"
+import { SummaryPopover } from "../summary/popover"
 import { SessionContextUsage } from "@/session/timeline/session-context-usage"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useServer } from "@/runtime/server/current"
@@ -38,7 +38,7 @@ import { parseCommentNote, readPromptPresentation } from "@/composer/comment-not
 import { useCommand } from "@/shell/commands/command"
 import { useSettings } from "@/settings/model"
 import { SessionProjectMenu, SessionTitleHeader } from "../session-identity-header"
-import { SessionHeader } from "@/session/header/session-header"
+import { SessionHeaderSpacer } from "@/session/header/session-header"
 import type { BackgroundTask } from "../summary/background"
 
 const SessionSummaryPanel = lazy(async () => {
@@ -537,58 +537,32 @@ function MessageTimelineView(
                     <SessionContextUsage placement="bottom" />
                     <Show when={!parentID() && project()}>
                       {(project) => (
-                        <Popover
-                          open={summaryOpen()}
-                          placement="bottom-end"
-                          gutter={6}
-                          overflowPadding={16}
-                          onOpenChange={setSummary}
-                        >
-                          <Popover.Anchor
-                            class="pointer-events-none absolute end-3 top-0 h-12 w-0"
-                            aria-hidden="true"
-                          />
-                          <Popover.Trigger
-                            as={IconButton}
-                            icon={<Icon name="window-analytics" />}
-                            variant="ghost-muted"
-                            size="large"
-                            state={summaryOpen() ? "pressed" : undefined}
-                            aria-label={language.t("session.summary.title")}
-                            aria-expanded={summaryOpen()}
-                          />
-                          <Popover.Portal>
-                            <Popover.Content
-                              class="z-50 max-h-[calc(100dvh-96px)] overflow-y-auto border-0 bg-transparent p-1 outline-none"
-                              aria-label={language.t("session.summary.title")}
-                            >
-                              <Suspense>
-                                <SessionSummaryPanel
-                                  shown={summaryOpen()}
-                                  project={project()}
-                                  avatar={showProjectIcon() ? projectAvatar() : undefined}
-                                  directory={sessionDirectory()}
-                                  local={!workspaceSession()}
-                                  branch={data.location.vcs.info({ directory: sdk().directory })?.branch.current}
-                                  baseBranch={data.location.vcs.info({ directory: project().worktree })?.branch.current}
-                                  diffs={sessionDiffs()}
-                                  sessionID={id}
-                                  moveEligible={props.workspaceMoveEligible}
-                                  moveDismissed={workspaceSuggestionDismissed()}
-                                  onMoveDismiss={() => setWorkspaceSuggestionDismissed(true)}
-                                  onReview={() => {
-                                    setSummary(false)
-                                    props.onReview()
-                                  }}
-                                  backgroundTasks={props.background.tasks()}
-                                />
-                              </Suspense>
-                            </Popover.Content>
-                          </Popover.Portal>
-                        </Popover>
+                        <SummaryPopover open={summaryOpen()} onOpenChange={setSummary}>
+                          <Suspense>
+                            <SessionSummaryPanel
+                              shown={summaryOpen()}
+                              project={project()}
+                              avatar={showProjectIcon() ? projectAvatar() : undefined}
+                              directory={sessionDirectory()}
+                              local={!workspaceSession()}
+                              branch={data.location.vcs.info({ directory: sdk().directory })?.branch.current}
+                              baseBranch={data.location.vcs.info({ directory: project().worktree })?.branch.current}
+                              diffs={sessionDiffs()}
+                              sessionID={id}
+                              moveEligible={props.workspaceMoveEligible}
+                              moveDismissed={workspaceSuggestionDismissed()}
+                              onMoveDismiss={() => setWorkspaceSuggestionDismissed(true)}
+                              onReview={() => {
+                                setSummary(false)
+                                props.onReview()
+                              }}
+                              backgroundTasks={props.background.tasks()}
+                            />
+                          </Suspense>
+                        </SummaryPopover>
                       )}
                     </Show>
-                    <SessionHeader />
+                    <SessionHeaderSpacer />
                   </div>
                 )}
               </Show>

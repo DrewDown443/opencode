@@ -1,6 +1,5 @@
 import type { ConfigEntry } from "@opencode/client"
 
-// Config documents are ordered from lowest to highest priority.
 export function configuredLsps(entries: readonly ConfigEntry[]) {
   return entries
     .reduce<string[]>((names, entry) => {

@@ -6,6 +6,13 @@ import { useServerSDK } from "@/runtime/server/client"
 import { usePlatform } from "@/runtime/platform/platform"
 import { showToast } from "@/shell/notifications/toast"
 
+export type McpControls = {
+  readonly preview: boolean
+  readonly states: Readonly<Record<string, boolean>>
+  readonly pending: boolean
+  change: (name: string, enabled: boolean) => void
+}
+
 export function useMcpToggle(directory?: Accessor<string | undefined>, onSuccess?: () => unknown) {
   const data = useData()
   const serverSDK = useServerSDK()
@@ -17,11 +24,11 @@ export function useMcpToggle(directory?: Accessor<string | undefined>, onSuccess
   }
 
   return useMutation(() => ({
-    mutationFn: async (input: string | { name: string; enabled: boolean }) => {
+    mutationFn: async (input: string | { name: string; enabled: boolean; directory?: string }) => {
       const name = typeof input === "string" ? input : input.name
-      const ref = location()
+      const ref = typeof input !== "string" && input.directory ? { directory: input.directory } : location()
       const server = (await serverSDK.api.mcp.list({ location: ref })).data.find((item) => item.name === name)
-      if (!server || server.status.status === "pending") return
+      if (!server || (server.status.status === "pending" && typeof input === "string")) return
       const enabled = typeof input === "string" ? server.status.status !== "connected" : input.enabled
       if (!enabled) {
         await serverSDK.api.mcp.disconnect({ server: name, location: ref })
@@ -43,7 +50,6 @@ export function useMcpToggle(directory?: Accessor<string | undefined>, onSuccess
         })
         platform.openExternal(attempt.data.url)
       }
-      // Resource discovery can wait on unrelated MCPs, so start sign-in before refreshing it.
       data.location.mcp.resource.invalidate(ref)
       await Promise.all([data.location.mcp.resource.sync(ref), onSuccess?.()])
       // A successful HTTP response can still leave the MCP connection in a failed state.

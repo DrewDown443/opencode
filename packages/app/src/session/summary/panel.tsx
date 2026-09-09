@@ -1,17 +1,15 @@
 import { DiffChanges } from "@opencode/ui/diff-changes"
 import { Icon } from "@opencode/ui/icon"
-import { ProjectAvatar } from "@opencode/ui/project-avatar"
 import { getFilename } from "@opencode/util/path"
-import { createUniqueId, Show, type JSX } from "solid-js"
+import { createMemo, Show, type JSX } from "solid-js"
 import { useLanguage } from "@/runtime/i18n/language"
 import type { Project } from "@/runtime/server/types"
 import { useSettings } from "@/settings/model"
-import { displayName, getProjectAvatarSource } from "@/shell/layout/helpers"
-import { getProjectAvatarVariant } from "@/shell/state/layout"
 import { containsDirectory, workspaceDirectories } from "@/workspaces/paths"
 import { SessionWorkspaceMenu } from "../timeline/session-workspace-menu"
 import { BackgroundWorkSummary, type BackgroundTask } from "./background"
 import { SessionServerPanel } from "./server-panel"
+import { ProjectSummaryCard } from "./project-card"
 import "./summary.css"
 
 export function SessionSummaryPanel(props: {
@@ -33,8 +31,10 @@ export function SessionSummaryPanel(props: {
 }) {
   const language = useLanguage()
   const settings = useSettings()
-  const contentID = createUniqueId()
   const expanded = settings.sessionSummary.projectExpanded
+  const placement = createMemo(() =>
+    props.mobile ? "top-end" : language.direction() === "rtl" ? "right-start" : "left-start",
+  )
   const location = () => {
     if (props.local) return language.t("session.new.workspace.local")
     const workspace = workspaceDirectories(props.project).find((item) => containsDirectory(item, props.directory))
@@ -44,85 +44,61 @@ export function SessionSummaryPanel(props: {
   return (
     <div data-component="session-summary-panel" data-mobile={props.mobile || undefined}>
       <div>
-        <section class="session-summary-card" data-section="project">
-          <button
-            type="button"
-            class="session-summary-row session-summary-heading"
-            aria-label={displayName(props.project)}
-            aria-expanded={expanded()}
-            aria-controls={contentID}
-            onClick={() => settings.sessionSummary.setProjectExpanded(!expanded())}
+        <ProjectSummaryCard project={props.project} avatar={props.avatar}>
+          <SessionWorkspaceMenu
+            eligible={props.moveEligible}
+            sessionID={props.sessionID}
+            project={props.project}
+            directory={props.directory}
+            placement={placement()}
+            gutter={4}
+            class="session-summary-row"
           >
-            {props.avatar ?? (
-              <ProjectAvatar
-                fallback={displayName(props.project)}
-                src={getProjectAvatarSource(props.project.id, props.project.icon)}
-                variant={getProjectAvatarVariant(props.project.icon?.color)}
-              />
-            )}
-            <span dir="auto" class="min-w-0 truncate">
-              {displayName(props.project)}
+            <Icon name={props.local ? "monitor" : "outline-worktree"} class="shrink-0 text-v2-icon-icon-muted" />
+            <span dir="auto" class="session-summary-label">
+              {location()}
             </span>
-            <Icon name="fill-triangle-down" size="small" class="session-summary-disclosure" />
-          </button>
-          <Show when={expanded()}>
-            <div id={contentID} class="session-summary-rows">
-              <SessionWorkspaceMenu
-                eligible={props.moveEligible}
-                sessionID={props.sessionID}
-                project={props.project}
-                directory={props.directory}
-                placement={props.mobile ? "top-end" : language.direction() === "rtl" ? "right-start" : "left-start"}
-                gutter={4}
-                class="session-summary-row"
-              >
-                <Icon name={props.local ? "monitor" : "outline-worktree"} class="shrink-0 text-v2-icon-icon-muted" />
-                <span dir="auto" class="session-summary-label">
-                  {location()}
+            <Icon name="fill-triangle-down" class="shrink-0 text-v2-icon-icon-muted" />
+          </SessionWorkspaceMenu>
+          <div class="session-summary-row">
+            <Icon name="branch" class="shrink-0 text-v2-icon-icon-muted" />
+            <Show
+              when={props.branch}
+              fallback={
+                <span class="flex min-w-0 items-center gap-1.5">
+                  <span class="shrink-0 whitespace-nowrap">{language.t("session.summary.noBranch")}</span>
+                  <Show when={props.baseBranch}>
+                    {(base) => (
+                      <>
+                        <span class="text-v2-text-text-muted">·</span>
+                        <span class="truncate text-v2-text-text-faint">
+                          {language.t("session.summary.basedOn", { branch: base() })}
+                        </span>
+                      </>
+                    )}
+                  </Show>
                 </span>
-                <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
-              </SessionWorkspaceMenu>
-              <div class="session-summary-row">
-                <Icon name="branch" class="shrink-0 text-v2-icon-icon-muted" />
-                <Show
-                  when={props.branch}
-                  fallback={
-                    <span class="flex min-w-0 items-center gap-1.5">
-                      <span class="shrink-0 whitespace-nowrap">{language.t("session.summary.noBranch")}</span>
-                      <Show when={props.baseBranch}>
-                        {(base) => (
-                          <>
-                            <span class="text-v2-text-text-muted">·</span>
-                            <span class="truncate text-v2-text-text-faint">
-                              {language.t("session.summary.basedOn", { branch: base() })}
-                            </span>
-                          </>
-                        )}
-                      </Show>
-                    </span>
-                  }
-                >
-                  <span dir="auto" class="min-w-0 truncate">
-                    {props.branch}
-                  </span>
+              }
+            >
+              <span dir="auto" class="min-w-0 truncate">
+                {props.branch}
+              </span>
+            </Show>
+          </div>
+          <button type="button" class="session-summary-row" onClick={props.onReview}>
+            <Icon name="review" class="shrink-0 text-v2-icon-icon-muted" />
+            <Show when={props.diffs} fallback={<span>{language.t("session.review.loadingChanges")}</span>}>
+              {(diffs) => (
+                <Show when={diffs().length > 0} fallback={<span>{language.t("session.review.noChanges")}</span>}>
+                  <span>{language.plural("ui.sessionTurn.diffs.changed", diffs().length)}</span>
+                  <span class="text-v2-text-text-muted">·</span>
+                  <DiffChanges appearance="standard" changes={diffs()} />
                 </Show>
-              </div>
-              <button type="button" class="session-summary-row" onClick={props.onReview}>
-                <Icon name="review" class="shrink-0 text-v2-icon-icon-muted" />
-                <Show when={props.diffs} fallback={<span>{language.t("session.review.loadingChanges")}</span>}>
-                  {(diffs) => (
-                    <Show when={diffs().length > 0} fallback={<span>{language.t("session.review.noChanges")}</span>}>
-                      <span>{language.plural("ui.sessionTurn.diffs.changed", diffs().length)}</span>
-                      <span class="text-v2-text-text-muted">·</span>
-                      <DiffChanges appearance="standard" changes={diffs()} />
-                    </Show>
-                  )}
-                </Show>
-              </button>
-              <BackgroundWorkSummary tasks={props.backgroundTasks} mobile={props.mobile} />
-            </div>
-          </Show>
-        </section>
+              )}
+            </Show>
+          </button>
+          <BackgroundWorkSummary tasks={props.backgroundTasks} mobile={props.mobile} />
+        </ProjectSummaryCard>
         <Show when={expanded() && props.local && props.diffs?.length && props.moveEligible && !props.moveDismissed}>
           <div class="session-summary-move">
             <SessionWorkspaceMenu
@@ -130,7 +106,7 @@ export function SessionSummaryPanel(props: {
               sessionID={props.sessionID}
               project={props.project}
               directory={props.directory}
-              placement={props.mobile ? "top-end" : language.direction() === "rtl" ? "right-start" : "left-start"}
+              placement={placement()}
               gutter={4}
               class="session-summary-row"
             >

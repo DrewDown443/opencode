@@ -21,7 +21,7 @@ import { ServerConnection, serverName } from "@/runtime/server/registry"
 import { useGlobal } from "@/runtime/server/runtime"
 import { useSettings } from "@/settings/model"
 import { pluginLabel } from "@/providers/catalog/plugin"
-import { useMcpToggle } from "@/providers/connect/mcp"
+import { useMcpToggle, type McpControls } from "@/providers/connect/mcp"
 import { configuredLsps } from "./configured-lsp"
 
 const services = [
@@ -33,7 +33,17 @@ const services = [
 
 type Service = (typeof services)[number]["type"]
 
-export function SessionServerPanel(props: { directory: string; shown: boolean; mobile?: boolean }) {
+type ServiceMenuProps = {
+  service: (typeof services)[number]
+  directory: string
+  shown: boolean
+  open: boolean
+  mobile?: boolean
+  mcp?: McpControls
+  onOpenChange: (open: boolean) => void
+}
+
+export function SessionServerPanel(props: { directory: string; shown: boolean; mobile?: boolean; mcp?: McpControls }) {
   const language = useLanguage()
   const server = useServer()
   const global = useGlobal()
@@ -58,60 +68,48 @@ export function SessionServerPanel(props: { directory: string; shown: boolean; m
         onClick={() => settings.sessionSummary.setServerExpanded(!expanded())}
       >
         <Icon name="server" class="shrink-0 text-v2-icon-icon-muted" />
-        <span dir="auto" class="min-w-0 truncate">
-          {name()}
+        <span class="session-summary-heading-label">
+          <span dir="auto" class="min-w-0 truncate">
+            {name()}
+          </span>
+          <Icon name="fill-triangle-down" class="session-summary-disclosure" />
         </span>
-        <Icon name="fill-triangle-down" size="small" class="session-summary-disclosure" />
       </button>
-      <Show when={expanded()}>
-        <div id={contentID} class="session-summary-rows">
-          <For each={services}>
-            {(service) => (
-              <Popover
-                open={store.submenu === service.type}
-                onOpenChange={(open) => setStore("submenu", open ? service.type : undefined)}
-                placement={props.mobile ? "top-end" : language.direction() === "rtl" ? "right-start" : "left-start"}
-                gutter={4}
-                overflowPadding={16}
-                modal={false}
-              >
-                <Popover.Trigger as="button" type="button" class="session-summary-row">
-                  <Icon name={service.icon} class="shrink-0 text-v2-icon-icon-muted" />
-                  <span class="session-summary-label">{language.t(service.label)}</span>
-                  <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
-                </Popover.Trigger>
-                <Popover.Portal>
-                  <Popover.Content
-                    class="session-service-menu"
-                    data-service={service.type}
-                    aria-label={language.t(service.label)}
-                  >
-                    <Show when={store.submenu === service.type}>
-                      <ServiceMenu kind={service.type} directory={props.directory} />
-                    </Show>
-                  </Popover.Content>
-                </Popover.Portal>
-              </Popover>
-            )}
-          </For>
-        </div>
+      <Show when={expanded() ? props.directory : undefined} keyed>
+        {(directory) => (
+          <div id={contentID} class="session-summary-rows">
+            <For each={services}>
+              {(service) => (
+                <ServiceMenu
+                  service={service}
+                  directory={directory}
+                  shown={props.shown}
+                  open={store.submenu === service.type}
+                  mobile={props.mobile}
+                  mcp={props.mcp}
+                  onOpenChange={(open) => setStore("submenu", open ? service.type : undefined)}
+                />
+              )}
+            </For>
+          </div>
+        )}
       </Show>
     </section>
   )
 }
 
-function ServiceMenu(props: { kind: Service; directory: string }) {
-  if (props.kind === "mcp") return <McpMenu directory={props.directory} />
-  if (props.kind === "lsp") return <LspMenu directory={props.directory} />
-  return <ServiceCatalog kind={props.kind} directory={props.directory} />
+function ServiceMenu(props: ServiceMenuProps) {
+  if (props.service.type === "mcp") return <McpMenu {...props} />
+  if (props.service.type === "lsp") return <LspMenu {...props} />
+  return <ServiceCatalog {...props} />
 }
 
-function LspMenu(props: { directory: string }) {
+function LspMenu(props: ServiceMenuProps) {
   const data = useData()
   const sdk = useServerSDK()
   const language = useLanguage()
   const [load, { refetch }] = createResource(
-    () => props.directory,
+    () => props.shown && props.directory,
     (directory) => {
       data.location.config.invalidate({ directory })
       return data.location.config.sync({ directory })
@@ -122,10 +120,22 @@ function LspMenu(props: { directory: string }) {
     onCleanup(sdk.event.location(props.directory).on("config.updated", () => void refetch()))
   })
   return (
-    <ServiceContent loading={load.loading} error={load.error} retry={refetch}>
+    <ServicePopover
+      {...props}
+      loading={load.loading}
+      ready={data.location.config.list({ directory: props.directory }) !== undefined}
+      empty={names().length === 0}
+      error={load.error}
+      retry={refetch}
+    >
       <Show
         when={names().length}
-        fallback={<div class="session-service-message">{language.t("session.summary.lsp.empty")}</div>}
+        fallback={
+          <ServiceEmpty
+            title={language.t("session.summary.lsp.empty")}
+            description={language.t("session.summary.lsp.manage")}
+          />
+        }
       >
         <div class="session-service-message">{language.t("session.summary.lsp.configured")}</div>
         <For each={names()}>
@@ -137,21 +147,24 @@ function LspMenu(props: { directory: string }) {
             </div>
           )}
         </For>
+        <div class="session-service-message">{language.t("session.summary.lsp.manage")}</div>
       </Show>
-      <div class="session-service-message">{language.t("session.summary.lsp.manage")}</div>
-    </ServiceContent>
+    </ServicePopover>
   )
 }
 
-function McpMenu(props: { directory: string }) {
+function McpMenu(props: ServiceMenuProps) {
   const data = useData()
   const language = useLanguage()
   const toggle = useMcpToggle(() => props.directory)
   const [load, { refetch }] = createResource(
-    () => props.directory,
-    (directory) => {
+    () => props.shown && ([props.directory, props.mcp?.preview] as const),
+    async ([directory, preview]) => {
       data.location.mcp.server.invalidate({ directory })
-      return data.location.mcp.server.sync({ directory })
+      await Promise.all([
+        data.location.mcp.server.sync({ directory }),
+        ...(preview ? [data.location.config.sync({ directory })] : []),
+      ])
     },
   )
   const servers = createMemo(() =>
@@ -159,27 +172,57 @@ function McpMenu(props: { directory: string }) {
       a.name.localeCompare(b.name),
     ),
   )
+  const defaults = createMemo(() =>
+    Object.fromEntries(
+      (data.location.config.list({ directory: props.directory }) ?? []).flatMap((entry) =>
+        entry.type === "document"
+          ? Object.entries(entry.info.mcp?.servers ?? {}).map(([name, config]) => [name, !config.disabled] as const)
+          : [],
+      ),
+    ),
+  )
 
   return (
-    <ServiceContent loading={load.loading} error={load.error} retry={refetch}>
+    <ServicePopover
+      {...props}
+      loading={load.loading}
+      ready={
+        data.location.mcp.server.list({ directory: props.directory }) !== undefined &&
+        (!props.mcp?.preview || data.location.config.list({ directory: props.directory }) !== undefined)
+      }
+      empty={servers().length === 0}
+      error={load.error}
+      retry={refetch}
+    >
       <Show
         when={servers().length}
         fallback={
-          <div class="session-service-message">
-            <p>{language.t("session.summary.mcp.empty")}</p>
-            <p>{language.t("session.summary.mcp.add")}</p>
-          </div>
+          <ServiceEmpty
+            title={language.t("session.summary.mcp.empty")}
+            description={language.t("session.summary.mcp.add")}
+          />
         }
       >
+        <Show when={props.mcp?.preview}>
+          <div class="session-service-message" data-slot="mcp-preview-hint">
+            {language.t("session.summary.mcp.onCreation")}
+          </div>
+        </Show>
         <Index each={servers()}>
           {(server) => {
-            const enabled = () => server().status.status !== "disabled"
-            const pending = () => toggle.isPending || server().status.status === "pending"
+            const preview = () => props.mcp?.preview === true
+            const enabled = () =>
+              preview()
+                ? (props.mcp?.states[server().name] ?? defaults()[server().name] ?? true)
+                : server().status.status !== "disabled"
+            const pending = () =>
+              (props.mcp?.pending ?? toggle.isPending) || (!preview() && server().status.status === "pending")
             const error = () => {
               const status = server().status
               return status.status === "failed" ? status.error : undefined
             }
             const label = () => {
+              if (preview()) return undefined
               const status = server().status.status
               if (status === "failed") return language.t("session.summary.failed")
               if (status === "pending") return language.t("session.summary.connecting")
@@ -188,25 +231,28 @@ function McpMenu(props: { directory: string }) {
             }
             const change = (value: boolean) => {
               if (pending()) return
+              if (props.mcp) return props.mcp.change(server().name, value)
               toggle.mutate({ name: server().name, enabled: value })
             }
             return (
               <Switch
                 class="session-mcp-row [&_[data-slot=switch-description]]:sr-only"
-                description={label()}
+                description={preview() ? language.t("session.summary.mcp.onCreation") : label()}
                 checked={enabled()}
-                // Readonly preserves keyboard focus while the server confirms the toggle.
                 readOnly={pending()}
                 aria-disabled={pending()}
-                aria-busy={toggle.isPending}
+                aria-busy={props.mcp?.pending ?? toggle.isPending}
                 onChange={change}
                 onClick={(event: MouseEvent) => {
-                  // Label and control clicks already toggle; handle the row's padding here.
                   if (event.target === event.currentTarget) change(!enabled())
                 }}
-                title={error() ?? server().name}
+                title={preview() ? server().name : (error() ?? server().name)}
               >
-                <span class="session-service-dot" data-status={server().status.status} aria-hidden="true" />
+                <span
+                  class="session-service-dot"
+                  data-status={preview() ? undefined : server().status.status}
+                  aria-hidden="true"
+                />
                 <span dir="auto" class="session-summary-label">
                   {server().name}
                 </span>
@@ -222,18 +268,18 @@ function McpMenu(props: { directory: string }) {
           }}
         </Index>
       </Show>
-    </ServiceContent>
+    </ServicePopover>
   )
 }
 
-function ServiceCatalog(props: { kind: "plugins" | "skills"; directory: string }) {
+function ServiceCatalog(props: ServiceMenuProps) {
   const data = useData()
   const sdk = useServerSDK()
   const language = useLanguage()
   const [items, { refetch }] = createResource(
-    () => props.directory,
+    () => props.shown && props.directory,
     async (directory) => {
-      if (props.kind === "plugins") {
+      if (props.service.type === "plugins") {
         const result = await sdk.api.plugin.list({ location: { directory } })
         return result.data
           .filter((plugin) => plugin.source.type !== "builtin")
@@ -245,38 +291,60 @@ function ServiceCatalog(props: { kind: "plugins" | "skills"; directory: string }
       }
       data.location.skill.invalidate({ directory })
       await data.location.skill.sync({ directory })
-      return (data.location.skill.list({ directory }) ?? []).map((skill) => ({
-        name: skill.name,
-        status: "active",
-        error: undefined,
-      }))
+      return undefined
     },
   )
-  const list = createMemo(() =>
-    (items.error ? [] : (items.latest ?? [])).toSorted((a, b) => a.name.localeCompare(b.name)),
-  )
+  const loaded = () => items.state === "ready" || items.state === "refreshing"
+  const list = createMemo(() => {
+    const entries =
+      props.service.type === "plugins"
+        ? loaded()
+          ? (items.latest ?? [])
+          : []
+        : (data.location.skill.list({ directory: props.directory }) ?? []).map((skill) => ({
+            name: skill.name,
+            status: "active",
+            error: undefined,
+          }))
+    return entries.toSorted((a, b) => a.name.localeCompare(b.name))
+  })
   createEffect(() => {
     onCleanup(
       sdk.event
         .location(props.directory)
-        .on(props.kind === "plugins" ? "plugin.updated" : "skill.updated", () => void refetch()),
+        .on(props.service.type === "plugins" ? "plugin.updated" : "skill.updated", () => void refetch()),
     )
   })
   return (
-    <ServiceContent loading={items.loading} error={items.error} retry={refetch}>
+    <ServicePopover
+      {...props}
+      loading={items.loading}
+      ready={
+        props.service.type === "plugins"
+          ? loaded()
+          : data.location.skill.list({ directory: props.directory }) !== undefined
+      }
+      empty={list().length === 0}
+      error={items.error}
+      retry={refetch}
+    >
       <Show
         when={list().length}
         fallback={
-          <div class="session-service-message">
-            <p>
-              {language.t(props.kind === "plugins" ? "session.summary.plugins.empty" : "session.summary.skills.empty")}
-            </p>
-            <p>{language.t(props.kind === "plugins" ? "session.summary.plugins.add" : "session.summary.skills.add")}</p>
-          </div>
+          <ServiceEmpty
+            title={language.t(
+              props.service.type === "plugins" ? "session.summary.plugins.empty" : "session.summary.skills.empty",
+            )}
+            description={language.t(
+              props.service.type === "plugins" ? "session.summary.plugins.add" : "session.summary.skills.add",
+            )}
+          />
         }
       >
         <div class="session-service-message">
-          {language.t(props.kind === "plugins" ? "session.summary.plugins.manage" : "session.summary.skills.manage")}
+          {language.t(
+            props.service.type === "plugins" ? "session.summary.plugins.manage" : "session.summary.skills.manage",
+          )}
         </div>
         <For each={list()}>
           {(item) => (
@@ -292,34 +360,82 @@ function ServiceCatalog(props: { kind: "plugins" | "skills"; directory: string }
           )}
         </For>
       </Show>
-    </ServiceContent>
+    </ServicePopover>
   )
 }
 
-function ServiceContent(props: { loading: boolean; error: unknown; retry: () => unknown; children: JSX.Element }) {
+function ServicePopover(
+  props: ServiceMenuProps & {
+    loading: boolean
+    ready: boolean
+    empty: boolean
+    error: unknown
+    retry: () => unknown
+    children: JSX.Element
+  },
+) {
   const language = useLanguage()
+  const placement = createMemo(() =>
+    props.mobile ? "top-end" : language.direction() === "rtl" ? "right-start" : "left-start",
+  )
   return (
-    <Show
-      when={!props.loading}
-      fallback={
-        <div class="session-service-message" role="status">
-          {language.t("common.loading")}
-        </div>
-      }
+    <Popover
+      open={props.open}
+      onOpenChange={(open) => {
+        props.onOpenChange(open)
+        if (open && !props.loading) void props.retry()
+      }}
+      placement={placement()}
+      gutter={4}
+      overflowPadding={16}
+      modal={false}
     >
-      <Show
-        when={!props.error}
-        fallback={
-          <div class="session-service-message" role="alert">
-            <p>{language.t("common.requestFailed")}</p>
-            <button type="button" class="session-summary-row" onClick={() => props.retry()}>
-              {language.t("session.summary.retry")}
-            </button>
-          </div>
-        }
-      >
-        {props.children}
-      </Show>
-    </Show>
+      <Popover.Trigger as="button" type="button" class="session-summary-row">
+        <Icon name={props.service.icon} class="shrink-0 text-v2-icon-icon-muted" />
+        <span class="session-summary-label">{language.t(props.service.label)}</span>
+        <Icon name="fill-triangle-down" class="shrink-0 text-v2-icon-icon-muted" />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          class="session-service-menu"
+          data-service={props.service.type}
+          data-empty={(props.ready && !props.error && props.empty) || undefined}
+          aria-busy={props.loading}
+          aria-label={language.t(props.service.label)}
+        >
+          <Show
+            when={props.ready || !props.loading}
+            fallback={
+              <div class="session-service-message" role="status">
+                {language.t("common.loading")}
+              </div>
+            }
+          >
+            <Show
+              when={!props.error}
+              fallback={
+                <div class="session-service-message" role="alert">
+                  <p>{language.t("common.requestFailed")}</p>
+                  <button type="button" class="session-summary-row" onClick={() => props.retry()}>
+                    {language.t("session.summary.retry")}
+                  </button>
+                </div>
+              }
+            >
+              {props.children}
+            </Show>
+          </Show>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover>
+  )
+}
+
+function ServiceEmpty(props: { title: string; description: string }) {
+  return (
+    <div class="session-service-empty">
+      <strong>{props.title}</strong>
+      <p>{props.description}</p>
+    </div>
   )
 }

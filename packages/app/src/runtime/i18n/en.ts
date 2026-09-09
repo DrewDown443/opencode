@@ -387,6 +387,7 @@ export const dict = {
   "mcp.status.needs_auth": "needs auth",
   "mcp.status.disabled": "disabled",
   "mcp.auth.clickToAuthenticate": "Click to authenticate",
+  "mcp.auth.interactiveForm": "MCP server {{name}} requires an interactive authentication form",
 
   "dialog.fork.empty": "No messages to fork from",
 
@@ -1386,6 +1387,12 @@ export const dict = {
   "session.summary.noBranch": "No branch",
   "session.summary.basedOn": "Based on {{branch}}",
   "session.summary.server": "Server",
+  "session.summary.chooseProject": "Choose a project",
+  "session.summary.mcp.onCreation": "Applies when the worktree is created",
+  "session.summary.mcp.prepareFailed": "Could not prepare MCP servers",
+  "session.summary.mcp.unavailable": "MCP server {{name}} is not available in this worktree.",
+  "session.summary.mcp.signInBeforeSend": "Sign in to {{name}} before sending the prompt.",
+  "session.summary.mcp.notReady": "MCP server {{name}} is not ready. Resolve its connection before sending the prompt.",
   "session.summary.mcp": "MCP",
   "session.summary.plugins": "Plugins",
   "session.summary.skills": "Skills",
@@ -1405,7 +1412,6 @@ export const dict = {
   "session.summary.lsp.configured": "Configured LSPs",
   "session.summary.lsp.empty": "No LSP servers explicitly configured",
   "session.summary.lsp.manage": "Manage LSP in opencode.json",
-  "mcp.auth.interactiveForm": "MCP server {{name}} requires an interactive authentication form",
   "workspace.type.local": "local",
   "workspace.type.sandbox": "sandbox",
   "workspace.create.failed.title": "Failed to create worktree",
