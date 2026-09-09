@@ -138,7 +138,9 @@ ultimate source of truth.
 - [x] Sequence expressions (the comma operator).
 - [x] `await` for CodeMode promises and callable thenables; a plain value passes through unchanged, though every
       `await` still defers its continuation one reaction turn.
-- [x] `new` for Array, Object, Error types, Date, RegExp, Map, Set, URL, URLSearchParams, and Promise.
+- [x] `new` for Array, Object, Error types, Date, RegExp, Map, Set, URL, URLSearchParams, and Promise. `new` on any
+      other value throws a catchable `TypeError` that names the callee and lists the supported constructors; a
+      user-defined function reports the constructor gap below instead of `X is not a constructor`.
 - [x] Arithmetic operators: `+`, `-`, `*`, `/`, `%`, and `**`.
 - [x] Equality and ordering: `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, and `>=`.
 - [x] Bitwise operators: `&`, `|`, `^`, `~`, `<<`, `>>`, and `>>>`.
@@ -367,7 +369,7 @@ ultimate source of truth.
       tool-call-limit failures; parse/compile failures, cooperative timeout, and output bounding remain outside program
       `catch`.
 - [x] Source locations on unsupported-syntax diagnostics for JavaScript-shaped input; TypeScript transpilation may
-      shift them.
+      shift them. The attached supported-syntax summary describes this matrix, including the `new` constructor list.
 - [x] Model-visible host failure messages and underlying causes, including output-validation errors.
 - [ ] Distinguish user-thrown failures from interpreter defects and explicit tool refusals from internal tool
       failures; preserve those categories in caught errors, promise rejection handlers, and `Promise.allSettled`

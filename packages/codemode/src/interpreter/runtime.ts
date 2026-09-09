@@ -207,6 +207,8 @@ export class Interpreter<R> {
   private readonly toolKeys: (path: ReadonlyArray<string>) => ReadonlyArray<string>
   private readonly logs: Array<string>
   private readonly promises: PromiseRuntime<R>
+  /** Global names that `new` accepts, in declaration order, for diagnostics. */
+  private readonly constructors: ReadonlyArray<string>
   private generatorState?: GeneratorState
   private generatorAsync = false
   private readonly runner: Runner<R> = {
@@ -231,7 +233,11 @@ export class Interpreter<R> {
     this.logs = logs
     this.promises = promises
     const host = { runner: this.runner, promises, search: invokeSearch, toolKeys, logs }
-    for (const [name, value] of globals(host)) globalScope.set(name, { mutable: false, value })
+    const bindings = globals(host)
+    for (const [name, value] of bindings) globalScope.set(name, { mutable: false, value })
+    this.constructors = bindings.flatMap(([name, value]) =>
+      value instanceof HostFunction && value.construct !== undefined ? [name] : [],
+    )
   }
 
   run(program: Program): Effect.Effect<unknown, unknown, R> {
@@ -1262,10 +1268,22 @@ export class Interpreter<R> {
       const callee = yield* self.evaluateExpression(node.callee)
       // Globals are built with this interpreter's R; `instanceof` cannot recover the type argument.
       const construct = callee instanceof HostFunction ? (callee as HostFunction<R>).construct : undefined
-      if (construct === undefined) throw unsupportedSyntax("NewExpression", node)
+      if (construct === undefined) throw self.notConstructible(callee, node)
       const args = yield* self.evaluateCallArguments(node.arguments)
       return yield* construct(args, node)
     })
+  }
+
+  // `new` itself is supported, so a non-constructible callee is a TypeError like JS rather than
+  // unsupported syntax. User functions are a documented gap; everything else is not a constructor.
+  private notConstructible(callee: unknown, node: NewExpression): InterpreterRuntimeError {
+    const name = calleeDescription(node.callee)
+    const hint = `Supported constructors: ${this.constructors.join(", ")}.`
+    const message =
+      callee instanceof CodeModeFunction
+        ? `${name} cannot be constructed: user-defined constructors and classes are not supported. Call it as a function that returns a plain object instead.`
+        : `${name} is not a constructor.`
+    return new InterpreterRuntimeError(`${message} ${hint}`, node, "ExecutionFailure", [hint]).as("TypeError")
   }
 
   private evaluateBinaryExpression(node: BinaryExpression): Effect.Effect<unknown, unknown, R> {
