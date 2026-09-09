@@ -88,14 +88,12 @@ export function createComposerSubmit(input: ComposerSubmitInput) {
       if (value.mode === "normal" && !command) {
         session.handoff?.set(handoffMessage(value))
         const optimisticBusy = !input.adapter.working()
-        const sending = sendPrompt(
-          session,
-          value,
-          input.adapter.controls().model.selection.trackSessionCommit,
-          () => {
-            if (optimisticBusy) session.data.session.setStatus(session.id, "running")
-          },
-        ).then(
+        if (optimisticBusy && input.adapter.kind === "new-session")
+          session.data.session.setStatus(session.id, "running")
+        const sending = sendPrompt(session, value, input.adapter.controls().model.selection.trackSessionCommit, () => {
+          if (optimisticBusy && input.adapter.kind === "active-session")
+            session.data.session.setStatus(session.id, "running")
+        }).then(
           () => ({ ok: true as const }),
           (error) => ({ ok: false as const, error }),
         )
