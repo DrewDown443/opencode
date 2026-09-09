@@ -36,6 +36,10 @@ for (const rtl of [false, true]) {
       "true",
     )
     await expect(summary.getByRole("button", { name: "Server", exact: true })).toHaveAttribute("aria-expanded", "true")
+    await testInfo.attach(`new-session-summary-${rtl ? "rtl" : "ltr"}`, {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    })
     for (const [name, item] of [
       ["MCP", "summary-mcp"],
       ["Plugins", "project-plugin"],
@@ -46,10 +50,6 @@ for (const rtl of [false, true]) {
       await expect(page.getByRole("dialog", { name, exact: true }).getByText(item, { exact: true })).toBeVisible()
     }
     await page.keyboard.press("Escape")
-    await testInfo.attach(`new-session-summary-${rtl ? "rtl" : "ltr"}`, {
-      body: await page.screenshot(),
-      contentType: "image/png",
-    })
     await summary.getByRole("button", { name: "Local repository", exact: true }).click()
     const worktreeMenu = page.getByRole("menu", { name: "Local repository", exact: true })
     await expect
@@ -82,13 +82,15 @@ for (const rtl of [false, true]) {
   })
 }
 
-test("new worktree MCP choices persist per draft and apply before the first prompt", async ({ page }) => {
+test("new worktree MCP choices persist per draft and apply before the first prompt", async ({ page }, testInfo) => {
   const mock = await openDraft(page, "create")
   await page.locator('[data-component="composer-editor"]').fill("Use my selected MCPs")
   await page.getByRole("button", { name: "Session details", exact: true }).click()
   await page.getByRole("button", { name: "MCP", exact: true }).click()
   const menu = page.getByRole("dialog", { name: "MCP", exact: true })
   await expect(menu.locator('[data-slot="mcp-preview-hint"]')).toHaveText("Applies when the worktree is created")
+  await expect(menu).toHaveCSS("opacity", "1")
+  await testInfo.attach("new-worktree-mcp-preview", { body: await page.screenshot(), contentType: "image/png" })
   const toggle = menu.getByRole("switch", { name: "summary-mcp", exact: true })
   await expect(toggle).toBeChecked()
   await menu.getByText("summary-mcp", { exact: true }).click()
