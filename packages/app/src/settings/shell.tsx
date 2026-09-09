@@ -5,6 +5,7 @@ import { createStore } from "solid-js/store"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useLayout } from "@/shell/state/layout"
 import { useTabs } from "@/shell/tabs/tabs"
+import { displayName } from "@/shell/layout/helpers"
 import { useGlobal, useServerCtx } from "@/runtime/server/runtime"
 import { ServerConnection } from "@/runtime/server/registry"
 import type { LocalProject } from "@/shell/state/layout"
@@ -368,15 +369,22 @@ function ProjectSettings(props: { server: ServerConnection.Any; project: LocalPr
   const language = useLanguage()
   const surface = useSettingsSurface()
   const activeDirectory = useSettingsDirectory(() => props.server)
-  const groups = createMemo<SettingsNavGroup[]>(() => [
-    { items: nestedProjectTabs.map((item) => ({ ...item, label: language.t(item.label) })) },
-  ])
+  const groups: SettingsNavGroup[] = [
+    {
+      items: nestedProjectTabs.map((item) => ({
+        ...item,
+        get label() {
+          return item.value === "general" ? displayName(props.project) : language.t(item.label)
+        },
+      })),
+    },
+  ]
   return (
     <SettingsServerDataScope server={props.server} directory={props.project.worktree}>
       <LocationProvider directory={props.project.worktree}>
         <SettingsNavigation
           value={surface.view().tab}
-          groups={groups()}
+          groups={groups}
           backLabel={language.t("settings.backToProjects")}
           onBack={() => surface.back()}
           onChange={(value) => surface.select(value)}
