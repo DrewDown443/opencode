@@ -6,7 +6,11 @@ import { ConfigProviderPlugin } from "@opencode/core/config/plugin/provider"
 import { Integration } from "@opencode/core/integration"
 import { Plugin } from "@opencode/core/plugin"
 import { PluginHost } from "@opencode/core/plugin/host"
-import { AmazonBedrockPlugin, PROFILE_ONLY_BARE_IDS } from "@opencode/core/plugin/provider/amazon-bedrock"
+import {
+  AmazonBedrockPlugin,
+  AmazonBedrockModelsPlugin,
+  PROFILE_ONLY_BARE_IDS,
+} from "@opencode/core/plugin/provider/amazon-bedrock"
 import { Model } from "@opencode/core/model"
 import { Provider } from "@opencode/core/provider"
 import { Document, Info } from "@opencode/schema/config"
@@ -245,12 +249,6 @@ describe("AmazonBedrockPlugin", () => {
           }
         })
         const host = yield* addPlugin()
-        for (const id of PROFILE_ONLY_BARE_IDS) {
-          expect(required(yield* catalog.model.get(Provider.ID.amazonBedrock, Model.ID.make(id))).enabled).toBe(false)
-        }
-        for (const id of controls) {
-          expect(required(yield* catalog.model.get(Provider.ID.amazonBedrock, Model.ID.make(id))).enabled).toBe(true)
-        }
         yield* ConfigProviderPlugin.Plugin.effect(host).pipe(
           Effect.provide(
             Config.testLayer([
@@ -259,13 +257,26 @@ describe("AmazonBedrockPlugin", () => {
                 info: Schema.decodeUnknownSync(Info)({
                   model: "amazon-bedrock/deepseek.r1-v1:0",
                   providers: {
-                    "amazon-bedrock": { models: { "deepseek.r1-v1:0": { modelID: "us.deepseek.r1-v1:0" } } },
+                    "amazon-bedrock": {
+                      models: {
+                        "deepseek.r1-v1:0": { modelID: "us.deepseek.r1-v1:0" },
+                        alias: { modelID: "deepseek.r1-v1:0", disabled: false },
+                        mantle: { modelID: "anthropic.claude-opus-5", package: "aisdk:@ai-sdk/amazon-bedrock/mantle" },
+                      },
+                    },
                   },
                 }),
               }),
             ]),
           ),
         )
+        yield* AmazonBedrockModelsPlugin.effect(host)
+        for (const id of [...PROFILE_ONLY_BARE_IDS.filter((id) => id !== "deepseek.r1-v1:0"), "alias"]) {
+          expect(required(yield* catalog.model.get(Provider.ID.amazonBedrock, Model.ID.make(id))).enabled).toBe(false)
+        }
+        for (const id of [...controls, "mantle"]) {
+          expect(required(yield* catalog.model.get(Provider.ID.amazonBedrock, Model.ID.make(id))).enabled).toBe(true)
+        }
         expect(yield* catalog.model.default()).toMatchObject({ modelID: "us.deepseek.r1-v1:0", enabled: true })
       }),
     ),
@@ -275,7 +286,8 @@ describe("AmazonBedrockPlugin", () => {
     withEnv(noAmbientAWS, () =>
       Effect.gen(function* () {
         const catalog = yield* seedBedrock()
-        yield* addPlugin()
+        const host = yield* addPlugin()
+        yield* AmazonBedrockModelsPlugin.effect(host)
         for (const id of PROFILE_ONLY_BARE_IDS) {
           expect(yield* catalog.model.get(Provider.ID.amazonBedrock, Model.ID.make(id))).toBeUndefined()
         }

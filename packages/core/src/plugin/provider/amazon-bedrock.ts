@@ -71,9 +71,22 @@ export const AmazonBedrockPlugin = define({
           }
           delete provider.settings.endpoint
         })
-        for (const modelID of PROFILE_ONLY_BARE_IDS) {
-          if (!evt.model.get(item.provider.id, modelID)) continue
-          evt.model.update(item.provider.id, modelID, (model) => {
+      }
+    })
+  }),
+})
+
+// Registered after provider config so filtering uses the final wire ID and package.
+export const AmazonBedrockModelsPlugin = define({
+  id: "opencode.provider.amazon.bedrock.models",
+  effect: Effect.fn(function* (ctx) {
+    yield* ctx.catalog.transform((catalog) => {
+      for (const record of catalog.provider.list()) {
+        for (const model of record.models.values()) {
+          if (!PROFILE_ONLY_BARE_IDS.includes(model.modelID ?? model.id)) continue
+          const pkg = Provider.packageName(model.package ?? record.provider.package)
+          if (pkg !== "@ai-sdk/amazon-bedrock" && pkg !== "@opencode/ai/providers/amazon-bedrock") continue
+          catalog.model.update(record.provider.id, model.id, (model) => {
             model.enabled = false
           })
         }
