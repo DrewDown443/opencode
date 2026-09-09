@@ -42,7 +42,8 @@ export const Plugin = define({
       const configuredDefault = Config.latest(loaded.entries, "model")
       if (configuredDefault !== undefined)
         catalog.model.default.set(configuredDefault.providerID, configuredDefault.model)
-      for (const [id, item] of configuredProviders(loaded.entries)) {
+      const providers = configuredProviders(loaded.entries)
+      for (const [id, item] of providers) {
         const providerID = id
         const current = catalog.provider.get(providerID)
         const source = catalog.provider.get(item.canonical ?? current?.provider.canonical ?? providerID)
@@ -73,7 +74,15 @@ export const Plugin = define({
             }
             if (config.family !== undefined) model.family = config.family
             if (config.name !== undefined) model.name = config.name
-            if (config.modelID !== undefined) model.modelID = config.modelID
+            if (config.modelID !== undefined) {
+              // A remapped request uses the target's availability, unless config explicitly overrides it.
+              if (
+                config.modelID !== model.modelID &&
+                !providers.some(([key, value]) => key === providerID && value.models?.[id]?.disabled !== undefined)
+              )
+                model.enabled = source?.models.get(config.modelID)?.enabled ?? true
+              model.modelID = config.modelID
+            }
             if (config.compatibility !== undefined)
               model.compatibility = { ...model.compatibility, ...config.compatibility }
             if (config.package !== undefined) model.package = config.package
