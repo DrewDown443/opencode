@@ -255,7 +255,8 @@ export function PromptWorkspaceSelector(props: {
                 class="w-[243px] overflow-hidden rounded-md border-0 bg-v2-background-bg-layer-01 shadow-[var(--v2-elevation-floating)] focus:outline-none"
                 onOpenAutoFocus={(event) => {
                   event.preventDefault()
-                  branchSearchInput?.focus({ preventScroll: true })
+                  // Kobalte defers its list autofocus until after the focus scope opens.
+                  setTimeout(() => requestAnimationFrame(() => branchSearchInput?.focus({ preventScroll: true })))
                 }}
               >
                 <div class="flex h-7 shrink-0 items-center gap-2 rounded-sm pl-3 pr-2.5 text-v2-icon-icon-muted">
