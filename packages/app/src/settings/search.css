@@ -1,0 +1,203 @@
+.settings-sidebar {
+  min-height: 0;
+  flex-shrink: 0;
+}
+
+.settings-nav-groups {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.settings-nav-groups [data-slot="tabs-v2-trigger-wrapper"] {
+  width: 100%;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  color: var(--v2-text-text-muted);
+}
+
+.settings-nav-groups [data-slot="tabs-v2-trigger"] {
+  width: 100%;
+  height: 100%;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 6px;
+}
+
+.settings-nav-groups [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
+  background: var(--v2-background-bg-layer-03);
+  color: var(--v2-text-text-base);
+}
+
+.settings-search,
+.settings-search-matches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.settings-search > [data-component="text-input-v2"] {
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.settings-search-scope {
+  width: 100%;
+  min-height: 32px;
+  flex-shrink: 0;
+  padding-inline: 6px;
+  border: 0.5px solid var(--v2-border-border-muted);
+  border-radius: 6px;
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-base);
+  font: inherit;
+  font-size: 13px;
+  line-height: var(--line-height-compact);
+}
+
+.settings-search-summary,
+.settings-search-group,
+.settings-search-detail,
+.settings-search-note {
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+  line-height: var(--line-height-compact);
+}
+
+.settings-search-summary {
+  padding-inline: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-search-results {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  padding: 2px;
+}
+
+.settings-search-group {
+  padding: 16px 6px 6px;
+  overflow-wrap: anywhere;
+  font-weight: 530;
+}
+
+.settings-search-group:first-child {
+  padding-top: 4px;
+}
+
+.settings-search-result {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+
+.settings-search-title {
+  color: var(--v2-text-text-base);
+  font-size: 13px;
+  font-weight: 530;
+  line-height: var(--line-height-compact);
+  overflow-wrap: anywhere;
+}
+
+.settings-search-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.settings-search-result[data-highlighted="true"],
+.settings-search-result[aria-current="location"] {
+  background: var(--v2-background-bg-layer-03);
+}
+
+.settings-search-result:focus-visible,
+.settings-search-scope:focus-visible,
+.settings-search-destination button:focus-visible {
+  outline: 2px solid var(--v2-border-border-base);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .settings-search-result:hover,
+  .settings-nav-groups [data-slot="tabs-v2-trigger-wrapper"]:hover {
+    background: var(--v2-background-bg-layer-03);
+  }
+}
+
+.settings-search-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px 6px;
+  font-size: 13px;
+  line-height: var(--line-height-base);
+  color: var(--v2-text-text-muted);
+}
+
+.settings-search-note {
+  padding: 12px 6px 0;
+}
+
+.settings-search-destination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 16px 0;
+  font-size: 12px;
+  line-height: var(--line-height-compact);
+  color: var(--v2-text-text-muted);
+}
+
+.settings-search-destination > bdi {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-search-destination button {
+  flex-shrink: 0;
+  border: 0;
+  padding: 4px;
+  background: transparent;
+  color: var(--v2-text-text-base);
+  cursor: pointer;
+}
+
+.settings-content > .settings-panel {
+  min-height: 0;
+  flex: 1;
+}
+
+[data-search-target] {
+  outline: none;
+  border-radius: 6px;
+  animation: settings-search-reveal 1.8s ease-out;
+}
+
+@keyframes settings-search-reveal {
+  from {
+    box-shadow: 0 0 0 2px var(--v2-border-border-base);
+  }
+  to {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-search-target] {
+    animation: none;
+    outline: 2px solid var(--v2-border-border-base);
+  }
+}

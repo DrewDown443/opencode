@@ -26,6 +26,7 @@ const WebSearchSetting: Component<{
       description={language.t("settings.server.preferences.websearch.description")}
     >
       <Select
+        data-action="settings-websearch"
         options={props.controller.options()}
         current={props.controller.current()}
         value={(option) => String(option.value)}

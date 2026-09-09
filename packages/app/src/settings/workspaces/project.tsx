@@ -48,6 +48,7 @@ export const SettingsProjectGeneral: Component<{
           >
             <div class="project-settings-name">
               <TextInput
+                data-action="settings-project-name"
                 type="text"
                 appearance="base"
                 value={model.store.name}
@@ -64,6 +65,7 @@ export const SettingsProjectGeneral: Component<{
             description={language.t("project.settings.icon.description")}
           >
             <button
+              data-action="settings-project-icon"
               type="button"
               aria-label={language.t("dialog.project.edit.icon.alt")}
               class="project-settings-icon"
@@ -103,7 +105,7 @@ export const SettingsProjectGeneral: Component<{
               title={language.t("dialog.project.edit.color")}
               description={language.t("project.settings.color.description")}
             >
-              <div class="project-settings-colors">
+              <div class="project-settings-colors" data-action="settings-project-color">
                 <For each={PROJECT_AVATAR_VARIANTS}>
                   {(color) => {
                     const selected = () => getProjectAvatarVariant(model.store.color) === color
@@ -132,7 +134,7 @@ export const SettingsProjectGeneral: Component<{
             </SettingsRow>
           </Show>
 
-          <div class="project-settings-startup">
+          <div class="project-settings-startup" data-action="settings-project-startup">
             <div class="project-settings-startup-copy">
               <span class="project-settings-startup-title">{language.t("dialog.project.edit.worktree.startup")}</span>
               <span class="project-settings-startup-description">

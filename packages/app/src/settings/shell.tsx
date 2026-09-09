@@ -1,6 +1,6 @@
 import { Tabs } from "@opencode/ui/tabs"
 import { useDialog } from "@opencode/ui/context/dialog"
-import { createEffect, createMemo, onMount, Show, Switch, Match, type Accessor } from "solid-js"
+import { createEffect, createMemo, onCleanup, onMount, Show, Switch, Match, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useLayout } from "@/shell/state/layout"
@@ -77,7 +77,45 @@ export function SettingsScreen() {
     const next = surface.view().type
     if (next === viewType) return
     viewType = next
-    queueMicrotask(() => root?.focus({ preventScroll: true }))
+    queueMicrotask(() => {
+      const target =
+        surface.search.state.query.trim() && surface.search.state.expanded
+          ? root?.querySelector<HTMLInputElement>(".settings-search input")
+          : root
+      target?.focus({ preventScroll: true })
+    })
+  })
+
+  createEffect(() => {
+    const view = surface.view()
+    if (!view.target && !surface.search.state.selected) return
+    const target = view.target
+    // The target can mount after the server/project scope and inner tab resolve.
+    const reveal = () => {
+      if (!target && !surface.search.state.selected) return true
+      const control = root?.querySelector<HTMLElement>(
+        target
+          ? `[data-action="${CSS.escape(target)}"]`
+          : ".settings-content .settings-panel:not([hidden]) .settings-tab-title",
+      )
+      if (!control || !control.getClientRects().length) return false
+      const row = control.closest<HTMLElement>('[data-component="settings-row"]') ?? control
+      row.scrollIntoView({ block: "center", inline: "nearest" })
+      row.setAttribute("data-search-target", "")
+      row.tabIndex = -1
+      row.focus({ preventScroll: true })
+      return true
+    }
+    const observer = new MutationObserver(() => {
+      if (reveal()) observer.disconnect()
+    })
+    queueMicrotask(() => {
+      if (!reveal() && root) observer.observe(root, { childList: true, subtree: true, attributes: true })
+    })
+    onCleanup(() => {
+      observer.disconnect()
+      root?.querySelectorAll("[data-search-target]").forEach((row) => row.removeAttribute("data-search-target"))
+    })
   })
 
   const connection = (key: string) => servers().find((item) => item.key === key)
@@ -124,6 +162,10 @@ export function SettingsScreen() {
       onKeyDown={(event) => {
         if (event.key !== "Escape" || event.defaultPrevented || dialog.active) return
         event.preventDefault()
+        if (surface.search.state.query.trim()) {
+          surface.search.clear()
+          return
+        }
         surface.back()
       }}
     >
@@ -276,7 +318,7 @@ function RootSettings() {
               <SettingsModels />
             </Tabs.Content>
             <Tabs.Content value="extensions" class="settings-panel">
-              <SettingsExtensions />
+              <SettingsExtensions subtab={surface.view().subtab} onSubtab={(value) => surface.subtab(value)} />
             </Tabs.Content>
           </SettingsServerDataScope>
         )}
@@ -356,7 +398,7 @@ function ServerSettings(props: { entry: SettingsServer }) {
               <SettingsModels />
             </Tabs.Content>
             <Tabs.Content value="extensions" class="settings-panel">
-              <SettingsExtensions />
+              <SettingsExtensions subtab={surface.view().subtab} onSubtab={(value) => surface.subtab(value)} />
             </Tabs.Content>
           </SettingsServerDataScope>
         )}
@@ -400,7 +442,7 @@ function ProjectSettings(props: { server: ServerConnection.Any; project: LocalPr
             <SettingsWorkspaces projectID={props.project.id} activeDirectory={activeDirectory()} />
           </Tabs.Content>
           <Tabs.Content value="extensions" class="settings-panel">
-            <ProjectSettingsExtensions />
+            <ProjectSettingsExtensions subtab={surface.view().subtab} onSubtab={(value) => surface.subtab(value)} />
           </Tabs.Content>
         </SettingsNavigation>
       </LocationProvider>

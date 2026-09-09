@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from "@solidjs/router"
 import { createEffect, on } from "solid-js"
+import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode/ui/context"
 import { useLayout, type LayoutRoute } from "@/shell/state/layout"
 import { useCommand } from "@/shell/commands/command"
@@ -22,7 +23,7 @@ export type SettingsRootTab =
 export type SettingsServerTab = "general" | "projects" | "workspaces" | "providers" | "models" | "extensions"
 export type SettingsProjectTab = "general" | "workspaces" | "extensions"
 
-export type SettingsView =
+export type SettingsView = (
   | { type: "root"; tab: SettingsRootTab }
   | { type: "server"; server: string; tab: SettingsServerTab }
   | {
@@ -32,6 +33,7 @@ export type SettingsView =
       tab: SettingsProjectTab
       parent: "root" | "server"
     }
+) & { target?: string; subtab?: "mcps" | "plugins" | "skills" | "lsps" }
 
 const rootTabs: Record<SettingsRootTab, true> = {
   general: true,
@@ -87,6 +89,14 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
     const open = () => layout.route().type === "settings"
     const source = () => location.state?.settings?.route ?? { type: "home" as const }
     const view = (): SettingsView => location.state?.settings?.view ?? { type: "root", tab: "general" }
+    const [search, setSearch] = createStore({
+      query: "",
+      scope: "all",
+      origin: undefined as SettingsView | undefined,
+      selected: "",
+      breadcrumb: "",
+      expanded: true,
+    })
     let focus: HTMLElement | undefined
 
     const show = (view: SettingsView, replace: boolean) => {
@@ -103,6 +113,7 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
         open,
         (value) => {
           if (value) return
+          setSearch({ query: "", scope: "all", origin: undefined, selected: "", breadcrumb: "", expanded: true })
           if (focus?.isConnected) focus.focus({ preventScroll: true })
           focus = undefined
         },
@@ -114,6 +125,36 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
       active: open,
       route: source,
       view,
+      search: {
+        state: search,
+        input(query: string) {
+          if (!search.query.trim() && query.trim()) setSearch("origin", { ...view(), target: undefined })
+          setSearch({ query, expanded: true })
+          if (!query.trim()) setSearch({ selected: "", breadcrumb: "", origin: undefined })
+        },
+        scope(scope: string) {
+          setSearch({ scope, expanded: true })
+        },
+        expand() {
+          setSearch("expanded", true)
+        },
+        open(destination: SettingsView, id: string, breadcrumb: string) {
+          setSearch({ selected: id, breadcrumb, expanded: false })
+          show(destination, true)
+        },
+        clear() {
+          setSearch({ query: "", selected: "", breadcrumb: "", origin: undefined, expanded: true })
+        },
+        back() {
+          if (!search.query.trim() || !search.selected) return false
+          if (search.selected && search.origin) {
+            show(search.origin, true)
+            setSearch({ selected: "", breadcrumb: "", expanded: true })
+            return true
+          }
+          return false
+        },
+      },
       open(tab: SettingsRootTab = "general") {
         show({ type: "root", tab }, open())
       },
@@ -144,7 +185,10 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
               : current.type === "project" && isProjectTab(tab)
                 ? { ...current, tab }
                 : current
-        show(next, true)
+        show({ ...next, target: undefined, subtab: undefined }, true)
+      },
+      subtab(subtab: SettingsView["subtab"]) {
+        show({ ...view(), subtab, target: undefined }, true)
       },
       back() {
         const current = view()

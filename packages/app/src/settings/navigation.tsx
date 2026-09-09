@@ -3,6 +3,10 @@ import { Icon } from "@opencode/ui/icon"
 import { Menu } from "@opencode/ui/menu"
 import { Tabs } from "@opencode/ui/tabs"
 import { For, Show, type ComponentProps, type JSX } from "solid-js"
+import { useLanguage } from "@/runtime/i18n/language"
+import { useSettingsSurface } from "./surface"
+import { SettingsSearch } from "./search"
+import "./search.css"
 
 export type SettingsNavItem = {
   value: string
@@ -26,14 +30,28 @@ export function SettingsNavigation(props: {
   mobileAction?: JSX.Element
   children: JSX.Element
 }) {
+  const surface = useSettingsSurface()
+  const language = useLanguage()
+  const back = () => {
+    if (!surface.search.back()) {
+      props.onBack()
+      return
+    }
+    queueMicrotask(() => document.querySelector<HTMLInputElement>(".settings-search input")?.focus())
+  }
+  const backLabel = () => (surface.search.state.selected ? language.t("settings.search.back") : props.backLabel)
   const current = () => props.groups.flatMap((group) => group.items).find((item) => item.value === props.value)
+  const change = (value: string) => {
+    surface.search.clear()
+    props.onChange(value)
+  }
 
   return (
-    <Tabs orientation="vertical" variant="settings" value={props.value} onChange={props.onChange} class="settings">
+    <Tabs orientation="vertical" variant="settings" value={props.value} onChange={change} class="settings">
       <div class="settings-mobile-nav">
-        <button type="button" class="settings-back" onClick={props.onBack}>
+        <button type="button" class="settings-back" onClick={back}>
           <Icon name="arrow-left" size="small" class="settings-back-icon" />
-          <span>{props.backLabel}</span>
+          <span>{backLabel()}</span>
         </button>
         <div class="settings-mobile-actions">
           {props.mobileAction}
@@ -44,7 +62,7 @@ export function SettingsNavigation(props: {
             </Menu.Trigger>
             <Menu.Portal>
               <Menu.Content class="settings-mobile-menu" onEscapeKeyDown={(event) => event.stopPropagation()}>
-                <Menu.RadioGroup value={props.value} onChange={props.onChange}>
+                <Menu.RadioGroup value={props.value} onChange={change}>
                   <For each={props.groups}>
                     {(group, index) => (
                       <>
@@ -68,37 +86,50 @@ export function SettingsNavigation(props: {
           </Menu>
         </div>
       </div>
-      <Tabs.List>
+      <aside class="settings-sidebar">
         <div class="settings-nav">
-          <button type="button" class="settings-back" onClick={props.onBack}>
+          <button type="button" class="settings-back" onClick={back}>
             <Icon name="arrow-left" size="small" class="settings-back-icon" />
-            <span>{props.backLabel}</span>
+            <span>{backLabel()}</span>
           </button>
-          <div class="settings-nav-groups">
-            <For each={props.groups}>
-              {(group) => (
-                <div class="settings-nav-group">
-                  <Show when={group.label || group.action}>
-                    <div class="settings-nav-group-header" data-component="settings-nav-group-header">
-                      <span>{group.label}</span>
-                      {group.action}
-                    </div>
-                  </Show>
-                  <For each={group.items}>
-                    {(item) => (
-                      <Tabs.Trigger value={item.value} disabled={item.disabled}>
-                        <Icon name={item.icon} />
-                        {item.label}
-                      </Tabs.Trigger>
-                    )}
-                  </For>
-                </div>
-              )}
-            </For>
-          </div>
+          <SettingsSearch />
+          <Show when={!surface.search.state.query.trim()}>
+            <Tabs.List class="settings-nav-groups">
+              <For each={props.groups}>
+                {(group) => (
+                  <div class="settings-nav-group">
+                    <Show when={group.label || group.action}>
+                      <div class="settings-nav-group-header" data-component="settings-nav-group-header">
+                        <span>{group.label}</span>
+                        {group.action}
+                      </div>
+                    </Show>
+                    <For each={group.items}>
+                      {(item) => (
+                        <Tabs.Trigger value={item.value} disabled={item.disabled}>
+                          <Icon name={item.icon} />
+                          {item.label}
+                        </Tabs.Trigger>
+                      )}
+                    </For>
+                  </div>
+                )}
+              </For>
+            </Tabs.List>
+          </Show>
         </div>
-      </Tabs.List>
-      {props.children}
+      </aside>
+      <div class="settings-content">
+        <Show when={surface.search.state.selected}>
+          <div class="settings-search-destination">
+            <bdi dir="auto">{surface.search.state.breadcrumb}</bdi>
+            <button type="button" onClick={() => surface.search.clear()}>
+              {language.t("settings.search.exit")}
+            </button>
+          </div>
+        </Show>
+        {props.children}
+      </div>
     </Tabs>
   )
 }
