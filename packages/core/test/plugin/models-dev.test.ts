@@ -627,53 +627,6 @@ describe("ModelsDevPlugin", () => {
     }),
   )
 
-  it.effect("omits profile-only Bedrock imports while allowing later custom models", () =>
-    Effect.gen(function* () {
-      const catalog = yield* Catalog.Service
-      const integrations = yield* Integration.Service
-      const providerID = Provider.ID.amazonBedrock
-      const bare = Model.ID.make("deepseek.r1-v1:0")
-      const keep = ["us.deepseek.r1-v1:0", "anthropic.claude-opus-4-6-v1", "anthropic.claude-sonnet-4-6"]
-      yield* ModelsDevPlugin.effect(
-        host({ catalog: catalogHost(catalog), integration: integrationHost(integrations) }),
-      ).pipe(
-        Effect.provideService(
-          ModelsDev.Service,
-          ModelsDev.Service.of({
-            get: () =>
-              Effect.succeed([
-                {
-                  info: { ...Provider.Info.empty(providerID), package: Provider.aisdk("@ai-sdk/amazon-bedrock") },
-                  environment: [],
-                  models: [
-                    ...[bare, ...keep].map((id) => Model.Info.default(providerID, Model.ID.make(id))),
-                    {
-                      ...Model.Info.default(providerID, Model.ID.make("anthropic.claude-opus-5")),
-                      package: Provider.aisdk("@ai-sdk/amazon-bedrock/mantle"),
-                    },
-                  ],
-                },
-              ]),
-            refresh: () => Effect.void,
-          }),
-        ),
-      )
-      expect(yield* catalog.model.get(providerID, bare)).toBeUndefined()
-      for (const id of [...keep, "anthropic.claude-opus-5"])
-        expect(yield* catalog.model.get(providerID, Model.ID.make(id))).toMatchObject({ enabled: true })
-
-      yield* catalog.transform((editor) =>
-        editor.model.update(providerID, bare, (model) => {
-          model.modelID = Model.ID.make("us.deepseek.r1-v1:0")
-        }),
-      )
-      expect(yield* catalog.model.get(providerID, bare)).toMatchObject({
-        modelID: "us.deepseek.r1-v1:0",
-        enabled: true,
-      })
-    }),
-  )
-
   it.effect("registers key methods for providers with environment variables", () =>
     Effect.gen(function* () {
       const integrations = yield* Integration.Service

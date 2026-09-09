@@ -1,6 +1,6 @@
 import { define } from "@opencode/plugin/effect/plugin"
 import { Integration } from "@opencode/schema/integration"
-import { Provider } from "../provider.js"
+import { Provider } from "@opencode/schema/provider"
 import { Effect, Stream } from "effect"
 import { Bus } from "../bus.js"
 import { ModelsDev } from "../models-dev.js"
@@ -59,7 +59,6 @@ export const ModelsDevPlugin = define({
           if (model.status === "deprecated") continue
           if (
             provider.info.id === Provider.ID.amazonBedrock &&
-            (model.package ?? provider.info.package) === Provider.aisdk("@ai-sdk/amazon-bedrock") &&
             BEDROCK_PROFILE_ONLY_IDS.includes(model.modelID ?? model.id)
           )
             continue
