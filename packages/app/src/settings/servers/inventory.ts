@@ -2,6 +2,19 @@ import { createMemo } from "solid-js"
 import { ServerConnection, serverName, useServers } from "@/runtime/server/registry"
 import { useWslServers } from "@/servers/wsl/context"
 import type { WslServerItem } from "@/servers/wsl/types"
+import type { ServerCtx } from "@/runtime/server/runtime"
+import { pathKey } from "@/workspaces/path-key"
+
+export function settingsProjects(context: ServerCtx) {
+  const tracked = context.projects.list()
+  const paths = new Set(tracked.map((project) => pathKey(project.worktree)))
+  return [
+    ...tracked,
+    ...context.sync.data.project
+      .filter((project) => !paths.has(pathKey(project.worktree)))
+      .map((project) => ({ ...project, expanded: false })),
+  ]
+}
 
 export type SettingsServer = {
   key: ServerConnection.Key

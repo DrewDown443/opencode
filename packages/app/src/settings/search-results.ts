@@ -1,5 +1,6 @@
 import fuzzysort from "fuzzysort"
 import type { SettingsView } from "./surface"
+import type { LocalProject } from "@/shell/state/layout"
 
 export type SettingsSearchResult = {
   id: string
@@ -10,27 +11,32 @@ export type SettingsSearchResult = {
   page: string
   server?: string
   project?: string
+  projectName?: string
+  projectInfo?: LocalProject
+  entity?: boolean
+  topLevel?: boolean
   view: SettingsView
 }
 
 export function rankSettings(query: string, items: SettingsSearchResult[], origin: SettingsView) {
-  const value = query.trim().toLowerCase()
+  const value = normalize(query)
   if (!value) return []
-  const tokens = value.split(/\s+/)
   return items
     .flatMap((item) => {
-      const title = item.title.toLowerCase()
-      const primary = `${title} ${item.keywords}`.toLowerCase()
-      const description = item.description.toLowerCase()
-      const context = `${item.owner} ${item.page}`.toLowerCase()
+      const name = item.projectName ? normalize(item.projectName) : undefined
+      if (name && !` ${value} `.includes(` ${name} `)) return []
+      const query = name ? normalize(` ${value} `.replace(` ${name} `, " ")) : value
+      if (!query) return []
+      const tokens = query.split(" ")
+      const title = normalize(item.title)
+      const primary = normalize(`${title} ${item.keywords}`)
+      const description = normalize(item.description)
+      const context = normalize(`${item.owner} ${item.entity ? "" : item.page}`)
+      const fuzzy = fuzzysort.single(query, title)?.score ?? 0
       // Context qualifies a setting match; a project name alone should not return all its controls.
-      if (
-        !tokens.some((token) => `${primary} ${description}`.includes(token)) &&
-        (fuzzysort.single(value, title)?.score ?? 0) < 0.6
-      )
-        return []
+      if (!tokens.some((token) => `${primary} ${description}`.includes(token)) && fuzzy < 0.6) return []
       const score =
-        title === value
+        title === query
           ? 5
           : tokens.every((token) => title.includes(token))
             ? 4
@@ -38,7 +44,7 @@ export function rankSettings(query: string, items: SettingsSearchResult[], origi
               ? 3
               : tokens.every((token) => `${primary} ${description} ${context}`.includes(token))
                 ? 2
-                : (fuzzysort.single(value, title)?.score ?? 0) >= 0.6
+                : fuzzy >= 0.6
                   ? 1
                   : 0
       if (!score) return []
@@ -50,6 +56,16 @@ export function rankSettings(query: string, items: SettingsSearchResult[], origi
             : 0
       return [{ item, score, proximity }]
     })
-    .sort((a, b) => b.score - a.score || b.proximity - a.proximity || a.item.title.localeCompare(b.item.title))
+    .sort(
+      (a, b) =>
+        Number(!!b.item.topLevel) - Number(!!a.item.topLevel) ||
+        b.score - a.score ||
+        b.proximity - a.proximity ||
+        a.item.title.localeCompare(b.item.title),
+    )
     .map((result) => result.item)
+}
+
+function normalize(value: string) {
+  return value.normalize("NFKC").toLowerCase().trim().replace(/\s+/g, " ")
 }

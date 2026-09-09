@@ -38,6 +38,8 @@
 .settings-screen
   > .settings[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"]
   > .settings-sidebar {
+  min-height: 0;
+  flex-shrink: 0;
   width: 328px;
   min-width: 328px;
   padding-block: 48px;
@@ -79,6 +81,40 @@
   width: 100%;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.settings-nav-groups [data-slot="tabs-v2-trigger-wrapper"] {
+  width: 100%;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  color: var(--v2-text-text-muted);
+}
+
+.settings-nav-groups [data-slot="tabs-v2-trigger"] {
+  width: 100%;
+  height: 100%;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 6px;
+}
+
+.settings-nav-groups [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
+  background: var(--v2-background-bg-layer-03);
+  color: var(--v2-text-text-base);
+}
+
+@media (hover: hover) {
+  .settings-nav-groups [data-slot="tabs-v2-trigger-wrapper"]:hover {
+    background: var(--v2-background-bg-layer-03);
+  }
+}
+
+.settings-content > .settings-panel {
+  min-height: 0;
+  flex: 1;
 }
 
 .settings-nav-group {
@@ -250,6 +286,7 @@
 
 .settings-back {
   display: flex;
+  flex-shrink: 0;
   height: 28px;
   align-items: center;
   gap: 6px;
@@ -335,7 +372,7 @@
 .settings-tab-title {
   font-size: 15px;
   font-weight: 640;
-  line-height: 1;
+  line-height: var(--line-height-base);
   color: var(--v2-text-text-base);
 }
 
@@ -554,10 +591,6 @@
     padding-top: 12px;
   }
 
-  .settings-screen .settings-tab-title {
-    line-height: var(--line-height-base);
-  }
-
   .settings-screen
     > .settings[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"]
     > .settings-sidebar {
@@ -581,11 +614,19 @@
   }
 
   .settings-search-matches {
+    position: absolute;
+    inset-block-start: calc(100% + 8px);
+    inset-inline: 0;
+    z-index: 12;
     max-height: 45vh;
+    padding-block: 8px;
+    border-radius: 8px;
+    background: var(--v2-background-bg-base);
+    box-shadow: var(--v2-elevation-raised);
   }
 
-  .settings-search-destination {
-    padding-inline: var(--settings-mobile-inner-inset, 16px);
+  .settings-screen > .settings > .settings-sidebar[data-searchable="false"] {
+    display: none;
   }
 
   .settings-search [data-slot="text-input-v2-input"] {

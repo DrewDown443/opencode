@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from "@solidjs/router"
-import { createEffect, on } from "solid-js"
+import { batch, createEffect, on } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode/ui/context"
 import { useLayout, type LayoutRoute } from "@/shell/state/layout"
@@ -33,7 +33,11 @@ export type SettingsView = (
       tab: SettingsProjectTab
       parent: "root" | "server"
     }
-) & { target?: string; subtab?: "mcps" | "plugins" | "skills" | "lsps" }
+) & {
+  target?: string
+  subtab?: "mcps" | "plugins" | "skills" | "lsps"
+  searchActivation?: number
+}
 
 const rootTabs: Record<SettingsRootTab, true> = {
   general: true,
@@ -91,10 +95,11 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
     const view = (): SettingsView => location.state?.settings?.view ?? { type: "root", tab: "general" }
     const [search, setSearch] = createStore({
       query: "",
-      scope: "all",
       origin: undefined as SettingsView | undefined,
       selected: "",
-      breadcrumb: "",
+      highlighted: "",
+      scrollTop: 0,
+      activation: 0,
       expanded: true,
     })
     let focus: HTMLElement | undefined
@@ -113,7 +118,7 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
         open,
         (value) => {
           if (value) return
-          setSearch({ query: "", scope: "all", origin: undefined, selected: "", breadcrumb: "", expanded: true })
+          setSearch({ query: "", origin: undefined, selected: "", highlighted: "", scrollTop: 0, expanded: true })
           if (focus?.isConnected) focus.focus({ preventScroll: true })
           focus = undefined
         },
@@ -129,30 +134,32 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
         state: search,
         input(query: string) {
           if (!search.query.trim() && query.trim()) setSearch("origin", { ...view(), target: undefined })
-          setSearch({ query, expanded: true })
-          if (!query.trim()) setSearch({ selected: "", breadcrumb: "", origin: undefined })
-        },
-        scope(scope: string) {
-          setSearch({ scope, expanded: true })
+          setSearch({ query, highlighted: "", scrollTop: 0, expanded: true })
+          if (!query.trim()) setSearch({ selected: "", origin: undefined })
         },
         expand() {
           setSearch("expanded", true)
         },
-        open(destination: SettingsView, id: string, breadcrumb: string) {
-          setSearch({ selected: id, breadcrumb, expanded: false })
-          show(destination, true)
+        highlight(id: string) {
+          setSearch("highlighted", id)
+        },
+        scroll(scrollTop: number) {
+          setSearch("scrollTop", scrollTop)
+        },
+        open(destination: SettingsView, id: string) {
+          batch(() => {
+            show({ ...destination, searchActivation: search.activation + 1 }, true)
+            setSearch({ selected: id, highlighted: id, expanded: false, activation: search.activation + 1 })
+          })
         },
         clear() {
-          setSearch({ query: "", selected: "", breadcrumb: "", origin: undefined, expanded: true })
+          setSearch({ query: "", selected: "", highlighted: "", scrollTop: 0, origin: undefined, expanded: true })
         },
         back() {
-          if (!search.query.trim() || !search.selected) return false
-          if (search.selected && search.origin) {
-            show(search.origin, true)
-            setSearch({ selected: "", breadcrumb: "", expanded: true })
-            return true
-          }
-          return false
+          if (!search.query.trim() || !search.selected || !search.origin) return false
+          show(search.origin, true)
+          setSearch({ selected: "", expanded: true })
+          return true
         },
       },
       open(tab: SettingsRootTab = "general") {

@@ -10,6 +10,7 @@ type Entry<Tab> = {
   target?: string
   keywords?: string
   description?: Label
+  section?: Label
   subtab?: "mcps" | "plugins" | "skills" | "lsps"
   available?: "desktop" | "browser" | "dev" | "mobile-dev"
 }
@@ -69,18 +70,41 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     tab: "general",
     label: "settings.timeline.detail",
     target: "settings-timeline-detail",
+    section: "settings.timeline.title",
     keywords: "thinking reasoning tools timeline summary detailed",
   },
   {
     tab: "general",
     label: "settings.general.row.releaseNotes.title",
     target: "settings-release-notes",
+    section: "settings.general.section.updates",
     available: "desktop",
   },
-  { tab: "general", label: "settings.updates.row.check.title", target: "settings-check-updates", available: "desktop" },
-  { tab: "general", label: "settings.general.row.showSearch.title", target: "settings-show-search" },
-  { tab: "general", label: "settings.general.row.showStatus.title", target: "settings-show-status" },
-  { tab: "general", label: "settings.general.row.showCustomAgents.title", target: "settings-show-custom-agents" },
+  {
+    tab: "general",
+    label: "settings.updates.row.check.title",
+    target: "settings-check-updates",
+    section: "settings.general.section.updates",
+    available: "desktop",
+  },
+  {
+    tab: "general",
+    label: "settings.general.row.showSearch.title",
+    target: "settings-show-search",
+    section: "settings.general.section.advanced",
+  },
+  {
+    tab: "general",
+    label: "settings.general.row.showStatus.title",
+    target: "settings-show-status",
+    section: "settings.general.section.advanced",
+  },
+  {
+    tab: "general",
+    label: "settings.general.row.showCustomAgents.title",
+    target: "settings-show-custom-agents",
+    section: "settings.general.section.advanced",
+  },
   {
     tab: "appearance",
     label: "settings.general.row.colorScheme.title",
@@ -110,6 +134,7 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     tab: "notifications",
     label: "settings.general.notifications.agent.title",
     target: "settings-notifications-agent",
+    section: "settings.general.section.notifications",
     description: "settings.general.notifications.agent.description",
     keywords: "desktop notifications agent",
   },
@@ -117,6 +142,7 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     tab: "notifications",
     label: "settings.general.notifications.permissions.title",
     target: "settings-notifications-permissions",
+    section: "settings.general.section.notifications",
     description: "settings.general.notifications.permissions.description",
     keywords: "desktop notifications permissions",
   },
@@ -124,6 +150,7 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     tab: "notifications",
     label: "settings.general.notifications.errors.title",
     target: "settings-notifications-errors",
+    section: "settings.general.section.notifications",
     description: "settings.general.notifications.errors.description",
     keywords: "desktop notifications errors",
   },
@@ -131,6 +158,7 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     tab: "notifications",
     label: "settings.general.sounds.agent.title",
     target: "settings-sounds-agent",
+    section: "settings.general.section.sounds",
     description: "settings.general.sounds.agent.description",
     keywords: "sound audio agent",
   },
@@ -138,6 +166,7 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     tab: "notifications",
     label: "settings.general.sounds.permissions.title",
     target: "settings-sounds-permissions",
+    section: "settings.general.section.sounds",
     description: "settings.general.sounds.permissions.description",
     keywords: "sound audio permissions",
   },
@@ -145,6 +174,7 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     tab: "notifications",
     label: "settings.general.sounds.errors.title",
     target: "settings-sounds-errors",
+    section: "settings.general.section.sounds",
     description: "settings.general.sounds.errors.description",
     keywords: "sound audio errors",
   },
@@ -203,13 +233,6 @@ export const projectSettings: Entry<SettingsProjectTab>[] = [
   { tab: "general", label: "project.settings.name.title", target: "settings-project-name", keywords: "rename" },
   { tab: "general", label: "dialog.project.edit.icon", target: "settings-project-icon" },
   { tab: "general", label: "dialog.project.edit.color", target: "settings-project-color" },
-  {
-    tab: "general",
-    label: "dialog.project.edit.worktree.startup",
-    target: "settings-project-startup",
-    description: "project.settings.worktree.startup.description",
-    keywords: "startup script command setup worktree",
-  },
   { tab: "workspaces", label: "settings.tab.workspaces", keywords: "workspaces disk usage cleanup delete" },
   { tab: "extensions", label: "settings.tab.extensions" },
   {
@@ -222,18 +245,3 @@ export const projectSettings: Entry<SettingsProjectTab>[] = [
   { tab: "extensions", subtab: "skills", label: "settings.extensions.tab.skills" },
   { tab: "extensions", subtab: "lsps", label: "project.settings.extensions.tab.lsps", keywords: "language servers" },
 ]
-
-export const pageLabels: Record<SettingsRootTab, Label> = {
-  general: "settings.tab.preferences",
-  appearance: "settings.general.section.appearance",
-  notifications: "settings.tab.notifications",
-  shortcuts: "settings.shortcuts.title",
-  projects: "settings.tab.projects",
-  workspaces: "settings.tab.workspaces",
-  providers: "settings.providers.title",
-  models: "settings.models.title",
-  extensions: "settings.tab.extensions",
-  servers: "settings.section.server",
-  experimental: "settings.tab.experimental",
-  about: "settings.tab.about",
-}

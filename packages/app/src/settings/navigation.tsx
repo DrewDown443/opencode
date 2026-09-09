@@ -31,15 +31,14 @@ export function SettingsNavigation(props: {
   children: JSX.Element
 }) {
   const surface = useSettingsSurface()
+  const searchable = () => surface.view().type === "root"
   const language = useLanguage()
   const back = () => {
-    if (!surface.search.back()) {
-      props.onBack()
-      return
-    }
-    queueMicrotask(() => document.querySelector<HTMLInputElement>(".settings-search input")?.focus())
+    if (!searchable() && surface.search.back()) return
+    props.onBack()
   }
-  const backLabel = () => (surface.search.state.selected ? language.t("settings.search.back") : props.backLabel)
+  const backLabel = () =>
+    !searchable() && surface.search.state.selected ? language.t("settings.backToSettings") : props.backLabel
   const current = () => props.groups.flatMap((group) => group.items).find((item) => item.value === props.value)
   const change = (value: string) => {
     surface.search.clear()
@@ -86,14 +85,16 @@ export function SettingsNavigation(props: {
           </Menu>
         </div>
       </div>
-      <aside class="settings-sidebar">
+      <aside class="settings-sidebar" data-searchable={searchable()}>
         <div class="settings-nav">
           <button type="button" class="settings-back" onClick={back}>
             <Icon name="arrow-left" size="small" class="settings-back-icon" />
             <span>{backLabel()}</span>
           </button>
-          <SettingsSearch />
-          <Show when={!surface.search.state.query.trim()}>
+          <Show when={searchable()}>
+            <SettingsSearch />
+          </Show>
+          <Show when={!searchable() || !surface.search.state.query.trim()}>
             <Tabs.List class="settings-nav-groups">
               <For each={props.groups}>
                 {(group) => (
@@ -119,17 +120,7 @@ export function SettingsNavigation(props: {
           </Show>
         </div>
       </aside>
-      <div class="settings-content">
-        <Show when={surface.search.state.selected}>
-          <div class="settings-search-destination">
-            <bdi dir="auto">{surface.search.state.breadcrumb}</bdi>
-            <button type="button" onClick={() => surface.search.clear()}>
-              {language.t("settings.search.exit")}
-            </button>
-          </div>
-        </Show>
-        {props.children}
-      </div>
+      <div class="settings-content">{props.children}</div>
     </Tabs>
   )
 }

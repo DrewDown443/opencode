@@ -134,7 +134,7 @@ export const SettingsProjectGeneral: Component<{
             </SettingsRow>
           </Show>
 
-          <div class="project-settings-startup" data-action="settings-project-startup">
+          <div class="project-settings-startup">
             <div class="project-settings-startup-copy">
               <span class="project-settings-startup-title">{language.t("dialog.project.edit.worktree.startup")}</span>
               <span class="project-settings-startup-description">

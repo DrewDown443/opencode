@@ -1,307 +1,263 @@
-import { createMemo, For, Show } from "solid-js"
+import { createEffect, createMemo, createUniqueId, For, on, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
+import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { Icon } from "@opencode/ui/icon"
 import { TextInput } from "@opencode/ui/text-input"
 import { useLanguage } from "@/runtime/i18n/language"
 import { usePlatform } from "@/runtime/platform/platform"
 import { useGlobal } from "@/runtime/server/runtime"
-import { displayName } from "@/shell/layout/helpers"
-import { useSettingsServers } from "./servers/inventory"
-import { useSettingsSurface, type SettingsView, type SettingsServerTab } from "./surface"
-import { clientSettings, pageLabels, projectSettings, serverSettings } from "./search-catalog"
+import { ProjectIcon } from "@/shell/layout/project-icon"
+import { useCommand } from "@/shell/commands/command"
+import { settingsProjects, useSettingsServers } from "./servers/inventory"
+import { useSettingsSurface } from "./surface"
+import { pageIcons } from "./pages"
 import { rankSettings, type SettingsSearchResult } from "./search-results"
+import { settingsSearchIndex } from "./search-index"
 
 export function SettingsSearch() {
   const language = useLanguage()
+  const command = useCommand()
   const platform = usePlatform()
   const global = useGlobal()
   const servers = useSettingsServers()
   const surface = useSettingsSurface()
   const search = surface.search
   const mobile = createMediaQuery("(max-width: 767px)")
-  const narrow = createMediaQuery("(max-width: 815px)")
-  const [state, setState] = createStore({ highlighted: "" })
+  const [state, setState] = createStore({ narrow: false })
+  const listID = `settings-results-${createUniqueId()}`
+  let root: HTMLDivElement | undefined
   let input: HTMLInputElement | undefined
   let results: HTMLDivElement | undefined
+  onMount(() => {
+    const screen = root?.closest<HTMLElement>(".settings-screen")
+    if (!screen) return
+    setState("narrow", screen.clientWidth < 800)
+    createResizeObserver(screen, (rect) => setState("narrow", rect.width < 800))
+  })
+  command.register("settings.search", () => [
+    {
+      id: "settings.search.focus",
+      title: language.t("settings.search.placeholder"),
+      keybind: "mod+f",
+      hidden: true,
+      onSelect: () => {
+        input?.focus({ preventScroll: true })
+        input?.select()
+      },
+    },
+  ])
   const inventory = createMemo(() =>
     servers().map((server) => {
       const context = server.connection ? global.ensureServerCtx(server.connection) : undefined
       return {
         ...server,
         connected: context?.sdk.connection.status() === "connected",
-        projects: context
-          ? [
-              ...context.projects.list(),
-              ...context.sync.data.project
-                .filter((project) => !context.projects.list().some((item) => item.worktree === project.worktree))
-                .map((project) => ({ ...project, expanded: false })),
-            ]
-          : [],
+        projects: context ? settingsProjects(context) : [],
       }
     }),
   )
   const origin = () => search.state.origin ?? surface.view()
-  const scopes = createMemo(() => {
-    const view = origin()
-    return [
-      { value: "all", label: language.t("settings.search.scope.all") },
-      { value: "app", label: language.t("settings.search.scope.app") },
-      ...inventory().map((server) => ({ value: `server:${server.key}`, label: server.name })),
-      ...(view.type === "project"
-        ? [
-            {
-              value: `project:${view.server}:${view.project}`,
-              label:
-                inventory()
-                  .find((server) => server.key === view.server)
-                  ?.projects.find((project) => project.worktree === view.project)?.name || view.project,
-            },
-          ]
-        : []),
-    ]
-  })
-  const scope = () => (scopes().some((item) => item.value === search.state.scope) ? search.state.scope : "all")
-  const catalog = createMemo(() => {
-    const items: SettingsSearchResult[] = []
-    const add = (
-      entry: {
-        label: Parameters<typeof language.t>[0]
-        keywords?: string
-        description?: Parameters<typeof language.t>[0]
+  const catalog = createMemo(() =>
+    settingsSearchIndex({
+      servers: inventory(),
+      desktop: platform.platform === "desktop",
+      browser: !!platform.browserPane,
+      dev: import.meta.env.VITE_OPENCODE_CHANNEL !== "prod",
+      mobile: mobile(),
+      translate: language.t,
+    }),
+  )
+  const matches = createMemo(() => rankSettings(search.state.query, catalog(), origin()))
+  const shown = createMemo(() => matches().slice(0, 60))
+  const expanded = () => !!search.state.query.trim() && (!state.narrow || search.state.expanded)
+  const highlighted = () => shown().find((item) => item.id === search.state.highlighted) ?? shown()[0]
+  const optionID = (id: string) => `${listID}-${encodeURIComponent(id)}`
+  createEffect(
+    on(
+      () => search.state.query,
+      () => {
+        if (results) results.scrollTop = 0
       },
-      view: SettingsView,
-      owner: string,
-      server?: string,
-      project?: string,
-    ) => {
-      const page = language.t(
-        view.type !== "root" && view.tab === "general" ? "settings.general.section.general" : pageLabels[view.tab],
-      )
-      items.push({
-        id: JSON.stringify([server, project, view.tab, view.target, view.subtab]),
-        title: language.t(entry.label),
-        description: entry.description ? language.t(entry.description) : "",
-        keywords: entry.keywords ?? "",
-        owner,
-        page,
-        server,
-        project,
-        view,
-      })
-    }
-    clientSettings.forEach((entry) => {
-      if (entry.available === "desktop" && platform.platform !== "desktop") return
-      if (entry.available === "browser" && !platform.browserPane) return
-      if (
-        (entry.available === "dev" || entry.available === "mobile-dev") &&
-        import.meta.env.VITE_OPENCODE_CHANNEL === "prod"
-      )
-        return
-      if (entry.available === "mobile-dev" && !mobile()) return
-      add(entry, { type: "root", tab: entry.tab, target: entry.target }, language.t("settings.search.scope.app"))
-    })
-    inventory().forEach((server) => {
-      const view = (tab: SettingsServerTab, target?: string, subtab?: SettingsView["subtab"]): SettingsView => {
-        if (servers().length === 1) return { type: "root", tab: tab === "general" ? "servers" : tab, target, subtab }
-        return { type: "server", server: server.key, tab, target, subtab }
-      }
-      items.push({
-        id: `server:${server.key}`,
-        title: server.name,
-        description: server.connected ? "" : language.t("settings.search.unavailable"),
-        keywords: "",
-        owner: language.t("status.popover.tab.servers"),
-        page: language.t("settings.server.section.connection"),
-        server: server.key,
-        view: view("general"),
-      })
-      if (!server.connected) return
-      serverSettings.forEach((entry) =>
-        add(entry, view(entry.tab, entry.target, entry.subtab), server.name, server.key),
-      )
-      server.projects.forEach((project) => {
-        const destination: SettingsView = {
-          type: "project",
-          server: server.key,
-          project: project.worktree,
-          tab: "general",
-          parent: servers().length > 1 ? "server" : "root",
-        }
-        const name =
-          server.projects.filter((item) => displayName(item) === displayName(project)).length > 1
-            ? `${displayName(project)} · ${project.worktree}`
-            : displayName(project)
-        const owner = `${server.name} · ${name}`
-        items.push({
-          id: `project:${server.key}:${project.worktree}`,
-          title: displayName(project),
-          description: project.worktree,
-          keywords: "",
-          owner: server.name,
-          page: language.t("settings.tab.projects"),
-          server: server.key,
-          project: project.worktree,
-          view: destination,
-        })
-        projectSettings.forEach((entry) => {
-          if (entry.target === "settings-project-color" && project.icon?.override) return
-          add(
-            entry,
-            { ...destination, tab: entry.tab, target: entry.target, subtab: entry.subtab },
-            owner,
-            server.key,
-            project.worktree,
-          )
-        })
-      })
-    })
-    return items
-  })
-  const matches = createMemo(() =>
-    rankSettings(
-      search.state.query,
-      catalog().filter((item) => {
-        if (scope() === "all") return true
-        if (scope() === "app") return !item.server
-        if (scope() === `server:${item.server}`) return true
-        return !!item.project && scope() === `project:${item.server}:${item.project}`
-      }),
-      origin(),
+      { defer: true },
     ),
   )
-  const shown = () => matches().slice(0, 60)
-  const highlighted = () => shown().find((item) => item.id === state.highlighted) ?? shown()[0]
-  const unavailable = () =>
-    inventory().filter((server) => !server.connected && (scope() === "all" || scope() === `server:${server.key}`))
-  const select = (item: SettingsSearchResult) => surface.search.open(item.view, item.id, `${item.owner} › ${item.page}`)
+  const group = (item: SettingsSearchResult) => {
+    if (!item.server || servers().length > 1) return item.owner
+    return item.projectName ?? ""
+  }
+  const select = (item: SettingsSearchResult) => {
+    surface.search.open(item.view, item.id)
+    if (state.narrow && item.view.type === "root") {
+      input?.blur()
+      root?.closest<HTMLElement>(".settings-screen")?.focus({ preventScroll: true })
+    }
+  }
   const clear = () => {
     search.clear()
     input?.focus()
   }
 
   return (
-    <div class="settings-search" data-expanded={search.state.expanded}>
+    <div
+      ref={root}
+      class="settings-search"
+      data-expanded={search.state.expanded}
+      data-empty={!search.state.query.trim()}
+      onKeyDown={(event) => {
+        if (
+          event.defaultPrevented ||
+          event.isComposing ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.shiftKey
+        )
+          return
+        if (
+          event.target !== input &&
+          !(event.target instanceof Element && event.target.closest(".settings-search-result"))
+        )
+          return
+        if (event.key === "Escape" && search.state.query) {
+          event.preventDefault()
+          event.stopPropagation()
+          clear()
+          return
+        }
+        if (event.key === "Enter" && expanded() && highlighted()) {
+          event.preventDefault()
+          select(highlighted()!)
+          return
+        }
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return
+        if ((event.key === "Home" || event.key === "End") && event.target === input) return
+        event.preventDefault()
+        search.expand()
+        const index = shown().findIndex((item) => item.id === highlighted()?.id)
+        const next =
+          shown()[
+            event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? shown().length - 1
+                : Math.max(0, Math.min(shown().length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))
+          ]
+        if (!next) return
+        search.highlight(next.id)
+        const row = results?.querySelector<HTMLElement>(`#${CSS.escape(optionID(next.id))}`)
+        if (event.target !== input) row?.focus({ preventScroll: true })
+        row?.scrollIntoView({ block: "nearest", inline: "nearest" })
+      }}
+    >
       <TextInput
         ref={input}
         type="search"
         role="combobox"
         aria-autocomplete="list"
-        aria-expanded={!!search.state.query.trim() && (!narrow() || search.state.expanded)}
-        aria-activedescendant={
-          search.state.query.trim() && highlighted() ? `settings-result-${shown().indexOf(highlighted()!)}` : undefined
-        }
+        aria-expanded={expanded()}
+        aria-activedescendant={expanded() && highlighted() ? optionID(highlighted()!.id) : undefined}
         value={search.state.query}
         leadingIcon={<Icon name="magnifying-glass" size="small" />}
         placeholder={language.t("settings.search.placeholder")}
         aria-label={language.t("settings.search.placeholder")}
-        aria-controls="settings-search-results"
-        showClearButton={!!search.state.query}
+        aria-controls={search.state.query.trim() ? listID : undefined}
+        showClearButton
         onClearClick={clear}
         onFocus={() => search.expand()}
         onInput={(event) => {
-          setState("highlighted", "")
           search.input(event.currentTarget.value)
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && search.state.query) {
-            event.preventDefault()
-            event.stopPropagation()
-            clear()
-            return
-          }
-          if (event.key === "Enter" && highlighted()) {
-            event.preventDefault()
-            select(highlighted()!)
-            return
-          }
-          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
-          event.preventDefault()
-          const index = shown().findIndex((item) => item.id === highlighted()?.id)
-          const next = shown()[Math.max(0, Math.min(shown().length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))]
-          if (!next) return
-          setState("highlighted", next.id)
-          results
-            ?.querySelector<HTMLElement>(`[data-result-id="${CSS.escape(next.id)}"]`)
-            ?.scrollIntoView({ block: "nearest" })
         }}
         spellcheck={false}
         autocomplete="off"
       />
       <Show when={search.state.query.trim()}>
         <div class="settings-search-matches">
-          <select
-            class="settings-search-scope"
-            aria-label={language.t("settings.search.scope.label")}
-            value={scope()}
-            onChange={(event) => search.scope(event.currentTarget.value)}
-          >
-            <For each={scopes()}>{(item) => <option value={item.value}>{item.label}</option>}</For>
-          </select>
-          <div class="settings-search-summary" role="status">
-            {language.plural("settings.search.count", matches().length, { count: matches().length })}
-          </div>
           <div
-            ref={results}
-            id="settings-search-results"
+            ref={(element) => {
+              results = element
+              queueMicrotask(() => {
+                if (element.isConnected) element.scrollTop = search.state.scrollTop
+              })
+            }}
+            id={listID}
             class="settings-search-results"
             role="listbox"
             aria-label={language.t("settings.search.results")}
+            onScroll={(event) => search.scroll(event.currentTarget.scrollTop)}
           >
             <For each={shown()}>
               {(item, index) => (
                 <>
-                  <Show when={index() === 0 || shown()[index() - 1]?.owner !== item.owner}>
-                    <div class="settings-search-group">
-                      <bdi dir="auto">{item.owner}</bdi>
+                  <Show when={group(item) && (index() === 0 || group(shown()[index() - 1]) !== group(item))}>
+                    <div class="settings-search-group" role="presentation">
+                      <bdi dir="auto">{group(item)}</bdi>
                     </div>
                   </Show>
                   <button
-                    id={`settings-result-${index()}`}
+                    id={optionID(item.id)}
                     role="option"
                     aria-selected={highlighted()?.id === item.id}
-                    aria-label={language.t("settings.search.result", {
-                      title: item.title,
-                      scope: item.owner,
-                      page: item.page,
-                    })}
+                    aria-label={
+                      item.page === item.title && !item.owner
+                        ? item.title
+                        : language.t(
+                            item.page === item.title
+                              ? "settings.search.page"
+                              : item.owner
+                                ? "settings.search.result"
+                                : "settings.search.result.unscoped",
+                            { title: item.title, scope: item.owner, page: item.page },
+                          )
+                    }
                     type="button"
                     class="settings-search-result"
+                    data-compact={item.page === item.title}
+                    data-setting-target={item.view.target}
                     data-result-id={item.id}
                     data-highlighted={highlighted()?.id === item.id}
                     aria-current={search.state.selected === item.id ? "location" : undefined}
-                    title={`${item.owner} › ${item.page}${item.description ? `\n${item.description}` : ""}`}
-                    onClick={() => select(item)}
+                    title={[item.owner, item.page].filter(Boolean).join(" › ")}
+                    tabIndex={highlighted()?.id === item.id ? 0 : -1}
+                    onFocus={() => search.highlight(item.id)}
+                    onClick={(event) => {
+                      if (item.view.type === "root" && !state.narrow) event.currentTarget.focus({ preventScroll: true })
+                      select(item)
+                    }}
                   >
-                    <bdi dir="auto" class="settings-search-title">
-                      {item.title}
-                    </bdi>
-                    <span class="settings-search-detail">{item.page}</span>
-                    <Show when={item.description}>
-                      <bdi dir="auto" class="settings-search-detail settings-search-description">
-                        {item.description}
+                    <span class="settings-search-label">
+                      <Show
+                        when={item.projectInfo}
+                        fallback={
+                          <Show when={item.topLevel}>
+                            <Icon name={pageIcons[item.view.tab]} />
+                          </Show>
+                        }
+                      >
+                        {(project) => (
+                          <ProjectIcon project={project()} class="settings-search-project-icon" aria-hidden="true" />
+                        )}
+                      </Show>
+                      <bdi dir="auto" class="settings-search-title">
+                        {item.title}
                       </bdi>
+                    </span>
+                    <Show when={item.page !== item.title}>
+                      <span class="settings-search-detail">{item.page}</span>
                     </Show>
                   </button>
                 </>
               )}
             </For>
-            <Show when={!matches().length}>
-              <div class="settings-search-empty">
-                <span>{language.t("settings.search.empty")}</span>
-                <span>{language.t("settings.search.hint")}</span>
-              </div>
-            </Show>
-            <Show when={matches().length > shown().length}>
-              <p class="settings-search-note">{language.t("settings.search.refine")}</p>
-            </Show>
-            <For each={unavailable()}>
-              {(server) => (
-                <p class="settings-search-note">{language.t("settings.search.coverage", { server: server.name })}</p>
-              )}
-            </For>
-            <p class="settings-search-note">{language.t("settings.search.catalogHint")}</p>
           </div>
+          <Show when={!matches().length}>
+            <div class="settings-search-empty" role="status">
+              {language.t("settings.search.empty")}
+            </div>
+          </Show>
+          <Show when={matches().length > shown().length}>
+            <p class="settings-search-note">{language.t("settings.search.refine")}</p>
+          </Show>
         </div>
       </Show>
     </div>
