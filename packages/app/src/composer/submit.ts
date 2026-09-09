@@ -82,8 +82,9 @@ export function createComposerSubmit(input: ComposerSubmitInput) {
       if (value.mode === "normal" && !command) {
         session.handoff?.set(handoffMessage(value))
         const optimisticBusy = !input.adapter.working()
-        if (optimisticBusy) session.data.session.setStatus(session.id, "running")
-        const sending = sendPrompt(session, value).then(
+        const sending = sendPrompt(session, value, () => {
+          if (optimisticBusy) session.data.session.setStatus(session.id, "running")
+        }).then(
           () => ({ ok: true as const }),
           (error) => ({ ok: false as const, error }),
         )
@@ -303,7 +304,7 @@ async function sendCommand(
   })
 }
 
-async function sendPrompt(session: ComposerSession, value: ComposerSubmission) {
+async function sendPrompt(session: ComposerSession, value: ComposerSubmission, onAdmit: () => void) {
   const request = await buildSubmissionRequest(session, value)
   // Switching agent or model reconfigures the session immediately, and with it
   // the remainder of a running turn. A steer targets that turn, so its
@@ -349,7 +350,9 @@ async function sendPrompt(session: ComposerSession, value: ComposerSubmission) {
       },
     },
   }
-  await session.data.session.prompt(admission).catch(() => session.data.session.prompt(admission))
+  const sending = session.data.session.prompt(admission).catch(() => session.data.session.prompt(admission))
+  onAdmit()
+  await sending
 }
 
 async function buildSubmissionRequest(session: ComposerSession, value: ComposerSubmission) {

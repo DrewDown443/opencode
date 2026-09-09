@@ -23,20 +23,23 @@ test("keeps a submitted prompt in place while its optimistic rows are measured",
     .toBe(0)
 
   const observation = await page.evaluateHandle(() => {
-    const positions: number[] = []
+    const frames: { prompt?: number; working: boolean }[] = []
     let frame = 0
     const sample = () => {
       const prompt = [...document.querySelectorAll<HTMLElement>('[data-timeline-row="UserMessage"]')].find((row) =>
         row.textContent?.includes("Observe optimistic prompt spacing."),
       )
-      if (prompt) positions.push(prompt.getBoundingClientRect().y)
+      frames.push({
+        ...(prompt ? { prompt: prompt.getBoundingClientRect().y } : {}),
+        working: !!document.querySelector('[data-component="session-working"]'),
+      })
       frame = requestAnimationFrame(sample)
     }
     frame = requestAnimationFrame(sample)
     return {
       stop: () => {
         cancelAnimationFrame(frame)
-        return positions
+        return frames
       },
     }
   })
@@ -59,7 +62,9 @@ test("keeps a submitted prompt in place while its optimistic rows are measured",
         }),
       )
       .toBe(0)
-    const positions = await observation.evaluate((value) => value.stop())
+    const frames = await observation.evaluate((value) => value.stop())
+    expect(frames.some((frame) => frame.working && frame.prompt === undefined)).toBe(false)
+    const positions = frames.flatMap((frame) => (frame.prompt === undefined ? [] : [frame.prompt]))
     expect(positions.length).toBeGreaterThan(0)
     expect(new Set(positions).size).toBe(1)
   } finally {
